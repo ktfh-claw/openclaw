@@ -6,6 +6,7 @@ import {
 // Covers embedded runner extension factories and tool-result middleware bridge.
 import { SessionManager } from "openclaw/plugin-sdk/agent-sessions";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readLoggingConfig } from "../logging/config.js";
 import { createEmptyPluginRegistry } from "../plugins/registry.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import {
@@ -19,8 +20,20 @@ import { cleanupTempPluginTestEnvironment } from "./test-helpers/temp-plugin-ext
 const originalBundledPluginsDir = process.env.OPENCLAW_BUNDLED_PLUGINS_DIR;
 const tempDirs: string[] = [];
 
+vi.mock("../logging/config.js", async () => {
+  const actual =
+    await vi.importActual<typeof import("../logging/config.js")>("../logging/config.js");
+  return {
+    ...actual,
+    readLoggingConfig: vi.fn(actual.readLoggingConfig),
+  };
+});
+
+const mockedReadLoggingConfig = vi.mocked(readLoggingConfig);
+
 afterEach(() => {
   cleanupTempPluginTestEnvironment(tempDirs, originalBundledPluginsDir);
+  mockedReadLoggingConfig.mockReset();
 });
 
 describe("buildEmbeddedExtensionFactories", () => {
@@ -494,6 +507,46 @@ describe("buildEmbeddedExtensionFactories", () => {
       content: [{ type: "text", text: "Timed out" }],
       details: { status: "timeout", tool: "exec", error: "Timed out" },
       isError: true,
+    });
+  });
+
+  it("redacts configured patterns in tool results before they become model-visible", async () => {
+    mockedReadLoggingConfig.mockReturnValue({
+      redactSensitive: "tools",
+      redactPatterns: [String.raw`secret-[0-9]+`],
+    });
+    setActivePluginRegistry(createEmptyPluginRegistry());
+
+    const factories = buildEmbeddedExtensionFactories({
+      cfg: undefined,
+      sessionManager: SessionManager.inMemory(),
+      provider: "openai",
+      modelId: "gpt-5.4",
+      model: undefined,
+    });
+
+    const handlers = new Map<string, Function>();
+    await factories[0]?.({
+      on(event: string, handler: Function) {
+        handlers.set(event, handler);
+      },
+    } as never);
+    const handler = handlers.get("tool_result");
+
+    const redacted = await handler?.(
+      {
+        toolName: "read",
+        toolCallId: "call-redact",
+        content: [{ type: "text", text: "top secret-123" }],
+        details: { note: "secret-456" },
+        isError: false,
+      },
+      { cwd: "/tmp" },
+    );
+
+    expect(redacted).toEqual({
+      content: [{ type: "text", text: "top REDACTED" }],
+      details: { note: "REDACTED" },
     });
   });
 

@@ -21,6 +21,7 @@ import { createAgentToolResultMiddlewareRunner } from "../harness/tool-result-mi
 import type { AgentToolResult } from "../runtime/index.js";
 import type { ExtensionFactory, SessionManager } from "../sessions/index.js";
 import { isToolResultError } from "../tool-result-error.js";
+import { redactConfiguredToolResult } from "../tool-result-redaction.js";
 import { resolveTranscriptPolicy } from "../transcript-policy.js";
 import { isCacheTtlEligibleProvider, readLastCacheTtlTimestamp } from "./cache-ttl.js";
 import { recordEmbeddedToolSendReceipt } from "./tool-send-receipts.js";
@@ -79,16 +80,18 @@ function buildAgentToolResultMiddlewareFactory(
       const adjustedInput = eventToolCallId
         ? peekAdjustedParamsForToolCall(eventToolCallId, runId)
         : undefined;
-      const result = await runner.applyToolResultMiddleware({
-        threadId: event.threadId,
-        turnId: event.turnId,
-        toolCallId,
-        toolName: event.toolName,
-        args: recordFromUnknown(adjustedInput ?? event.input),
-        cwd: ctx.cwd,
-        isError: event.isError,
-        result: current,
-      });
+      const result = redactConfiguredToolResult(
+        await runner.applyToolResultMiddleware({
+          threadId: event.threadId,
+          turnId: event.turnId,
+          toolCallId,
+          toolName: event.toolName,
+          args: recordFromUnknown(adjustedInput ?? event.input),
+          cwd: ctx.cwd,
+          isError: event.isError,
+          result: current,
+        }),
+      );
       const isError = event.isError === true || inputHadErrorStatus || isToolResultError(result);
       if (eventToolCallId) {
         finalizeToolTerminalPresentation({
