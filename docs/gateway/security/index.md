@@ -31,7 +31,7 @@ pre-flight and rollback checklist.
 
 ## Quick check: `openclaw security audit`
 
-See also: [Formal Verification (Security Models)](/security/formal-verification)
+See also: [Formal Verification (Security Models)](/security/formal-verification) and [Provenance-aware enforcement metadata](/security/provenance-enforcement-metadata)
 
 Run this regularly (especially after changing config or exposing network surfaces):
 

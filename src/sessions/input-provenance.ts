@@ -1,6 +1,7 @@
 // Input provenance helpers normalize source metadata for session messages.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { AgentMessage } from "../../packages/agent-core/src/types.js";
+import type { EnforcementMetadata } from "../security/enforcement-metadata.js";
 
 // Input provenance marks whether a user-role message actually came from an
 // external user, another session, or an internal system/tool handoff.
@@ -50,6 +51,53 @@ export function normalizeInputProvenance(value: unknown): InputProvenance | unde
     sourceSessionKey: normalizeOptionalString(record.sourceSessionKey),
     sourceChannel: normalizeOptionalString(record.sourceChannel),
     sourceTool: normalizeOptionalString(record.sourceTool),
+  };
+}
+
+export function projectInputProvenanceToEnforcementMetadata(
+  value: unknown,
+): EnforcementMetadata | undefined {
+  const provenance = normalizeInputProvenance(value);
+  if (!provenance) {
+    return undefined;
+  }
+  if (provenance.kind === "external_user") {
+    return {
+      version: 1,
+      provenance: {
+        trust: "untrusted",
+        sourceKind: "external_user",
+        ...(provenance.sourceChannel ? { sourceLabel: provenance.sourceChannel } : {}),
+      },
+    };
+  }
+  if (provenance.kind === "internal_system") {
+    return {
+      version: 1,
+      provenance: {
+        trust: "trusted",
+        sourceKind: "internal_system",
+        ...(provenance.sourceTool
+          ? { sourceLabel: provenance.sourceTool }
+          : provenance.sourceChannel
+            ? { sourceLabel: provenance.sourceChannel }
+            : {}),
+      },
+    };
+  }
+  return {
+    version: 1,
+    provenance: {
+      trust: "unknown",
+      sourceKind: "inter_session",
+      ...(provenance.sourceTool
+        ? { sourceLabel: provenance.sourceTool }
+        : provenance.sourceChannel
+          ? { sourceLabel: provenance.sourceChannel }
+          : provenance.sourceSessionKey
+            ? { sourceLabel: provenance.sourceSessionKey }
+            : {}),
+    },
   };
 }
 

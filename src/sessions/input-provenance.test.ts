@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   annotateInterSessionPromptText,
   isAgentMediatedCompletionSourceTool,
+  projectInputProvenanceToEnforcementMetadata,
   shouldPreserveUserFacingSessionStateForInputProvenance,
   stripInterSessionPromptPrefixForDisplay,
 } from "./input-provenance.js";
@@ -127,5 +128,52 @@ describe("shouldPreserveUserFacingSessionStateForInputProvenance", () => {
         sourceTool: "sessions_send",
       }),
     ).toBe(false);
+  });
+});
+
+describe("projectInputProvenanceToEnforcementMetadata", () => {
+  it("maps external users to untrusted enforcement metadata", () => {
+    expect(
+      projectInputProvenanceToEnforcementMetadata({
+        kind: "external_user",
+        sourceChannel: "discord",
+      }),
+    ).toEqual({
+      version: 1,
+      provenance: {
+        trust: "untrusted",
+        sourceKind: "external_user",
+        sourceLabel: "discord",
+      },
+    });
+  });
+
+  it("maps internal-system and inter-session provenance conservatively", () => {
+    expect(
+      projectInputProvenanceToEnforcementMetadata({
+        kind: "internal_system",
+        sourceTool: "openclaw_acp",
+      }),
+    ).toEqual({
+      version: 1,
+      provenance: {
+        trust: "trusted",
+        sourceKind: "internal_system",
+        sourceLabel: "openclaw_acp",
+      },
+    });
+    expect(
+      projectInputProvenanceToEnforcementMetadata({
+        kind: "inter_session",
+        sourceSessionKey: "agent:main:discord:source",
+      }),
+    ).toEqual({
+      version: 1,
+      provenance: {
+        trust: "unknown",
+        sourceKind: "inter_session",
+        sourceLabel: "agent:main:discord:source",
+      },
+    });
   });
 });

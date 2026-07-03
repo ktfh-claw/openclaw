@@ -4,6 +4,10 @@ import { mimeTypeFromFilePath } from "@openclaw/media-core/mime";
 import type { AgentMessage } from "../../packages/agent-core/src/types.js";
 import { persistSessionTranscriptTurn } from "../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import {
+  applyEnforcementMetadataToMessage,
+  normalizeEnforcementMetadata,
+} from "../security/enforcement-metadata.js";
 import { applyInputProvenanceToUserMessage, normalizeInputProvenance } from "./input-provenance.js";
 import type {
   PersistedUserTurnMediaInput,
@@ -245,7 +249,10 @@ function buildPersistedUserTurnMessage(params: UserTurnInput): PersistedUserTurn
     ...(params.idempotencyKey ? { idempotencyKey: params.idempotencyKey } : {}),
     ...mediaFields,
   } as PersistedUserTurnMessage;
-  return applyInputProvenanceToUserMessage(message, params.provenance) as PersistedUserTurnMessage;
+  return applyEnforcementMetadataToMessage(
+    applyInputProvenanceToUserMessage(message, params.provenance),
+    params.enforcementMetadata,
+  ) as PersistedUserTurnMessage;
 }
 
 function resolvePersistedUserTurnMessage(
@@ -306,6 +313,9 @@ export function preparePersistedUserTurnMessageForTranscriptWrite(
   const provenance = normalizeInputProvenance(
     (message as unknown as { provenance?: unknown }).provenance,
   );
+  const enforcementMetadata = normalizeEnforcementMetadata(
+    (message as unknown as { enforcementMetadata?: unknown }).enforcementMetadata,
+  );
   const nextMessage = params.beforeMessageWrite({
     message,
     ...(params.agentId ? { agentId: params.agentId } : {}),
@@ -317,12 +327,18 @@ export function preparePersistedUserTurnMessageForTranscriptWrite(
   const nextUserMessage = provenance
     ? (applyInputProvenanceToUserMessage(nextMessage, provenance) as PersistedUserTurnMessage)
     : nextMessage;
+  const preservedMessage = enforcementMetadata
+    ? (applyEnforcementMetadataToMessage(
+        nextUserMessage,
+        enforcementMetadata,
+      ) as PersistedUserTurnMessage)
+    : nextUserMessage;
   return idempotencyKey
     ? ({
-        ...(nextUserMessage as unknown as Record<string, unknown>),
+        ...(preservedMessage as unknown as Record<string, unknown>),
         idempotencyKey,
       } as unknown as PersistedUserTurnMessage)
-    : nextUserMessage;
+    : preservedMessage;
 }
 
 export async function appendUserTurnTranscriptMessage(

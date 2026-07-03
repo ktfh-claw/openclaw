@@ -1,5 +1,6 @@
 // User-turn transcript type contracts shared by runtime and queue option types.
 import type { AgentMessage } from "../../packages/agent-core/src/types.js";
+import type { EnforcementMetadata } from "../security/enforcement-metadata.js";
 import type { InputProvenance } from "./input-provenance.js";
 
 export type UserTurnSessionEntry = {
@@ -16,7 +17,9 @@ export type PersistedUserTurnMediaInput = {
   kind?: string | null;
 };
 
-export type PersistedUserTurnMessage = Extract<AgentMessage, { role: "user" }>;
+export type PersistedUserTurnMessage = Extract<AgentMessage, { role: "user" }> & {
+  enforcementMetadata?: EnforcementMetadata;
+};
 
 export type UserTurnInput = {
   text?: string | null;
@@ -24,6 +27,7 @@ export type UserTurnInput = {
   timestamp?: number;
   idempotencyKey?: string;
   provenance?: InputProvenance;
+  enforcementMetadata?: EnforcementMetadata;
   mediaOnlyText?: string;
 };
 

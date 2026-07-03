@@ -262,6 +262,18 @@ describe("user turn transcript persistence", () => {
         sourceSessionKey: "source-main",
         sourceTool: "sessions_send",
       };
+      const enforcementMetadata = {
+        version: 1 as const,
+        provenance: {
+          trust: "untrusted" as const,
+          sourceKind: "external_user" as const,
+          sourceLabel: "telegram",
+        },
+        audience: {
+          scope: "current_session" as const,
+          label: "agent:main:telegram:dm:user-1",
+        },
+      };
 
       const appended = await appendUserTurnTranscriptMessage({
         transcriptPath,
@@ -273,6 +285,7 @@ describe("user turn transcript persistence", () => {
           media: [{ path: "/tmp/image.png", contentType: "image/png" }],
           timestamp: 123,
           provenance,
+          enforcementMetadata,
         },
         updateMode: "none",
       });
@@ -288,6 +301,7 @@ describe("user turn transcript persistence", () => {
           content: "What is in this image?",
           MediaPath: "/tmp/image.png",
           provenance,
+          enforcementMetadata,
           MediaType: "image/png",
         }),
       ]);
@@ -374,6 +388,14 @@ describe("user turn transcript persistence", () => {
         sourceSessionKey: "source-main",
         sourceTool: "sessions_send",
       };
+      const enforcementMetadata = {
+        version: 1 as const,
+        provenance: {
+          trust: "unknown" as const,
+          sourceKind: "inter_session" as const,
+          sourceLabel: "source-main",
+        },
+      };
       initializeGlobalHookRunner(
         createMockPluginRegistry([
           {
@@ -399,6 +421,7 @@ describe("user turn transcript persistence", () => {
           text: "secret prompt",
           idempotencyKey: "chat-run-1:user",
           provenance,
+          enforcementMetadata,
         },
         beforeMessageWrite: runAgentHarnessBeforeMessageWriteHook,
       });
@@ -408,6 +431,7 @@ describe("user turn transcript persistence", () => {
           text: "secret prompt",
           idempotencyKey: "chat-run-1:user",
           provenance,
+          enforcementMetadata,
         },
         beforeMessageWrite: runAgentHarnessBeforeMessageWriteHook,
       });
@@ -418,6 +442,7 @@ describe("user turn transcript persistence", () => {
           content: "[redacted by hook]",
           idempotencyKey: "chat-run-1:user",
           provenance,
+          enforcementMetadata,
         }),
       ]);
       expect(hookCalls).toBe(1);

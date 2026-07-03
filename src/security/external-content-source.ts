@@ -1,5 +1,6 @@
 // Normalizes source identifiers for externally supplied content.
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
+import type { EnforcementMetadata } from "./enforcement-metadata.js";
 
 /** Hook session sources that carry untrusted external content into agent prompts. */
 export type HookExternalContentSource = "gmail" | "webhook";
@@ -26,6 +27,19 @@ export function mapHookExternalContentSource(
   source: HookExternalContentSource,
 ): "email" | "webhook" {
   return source === "gmail" ? "email" : "webhook";
+}
+
+export function projectHookExternalContentSourceToEnforcementMetadata(
+  source: HookExternalContentSource,
+): EnforcementMetadata {
+  return {
+    version: 1,
+    provenance: {
+      trust: "untrusted",
+      sourceKind: "external_hook",
+      sourceLabel: source,
+    },
+  };
 }
 
 /** Return true when a session key should receive external-content prompt wrapping. */
