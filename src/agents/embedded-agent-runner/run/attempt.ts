@@ -72,7 +72,10 @@ import {
 } from "../../../plugins/provider-runtime.js";
 import { getPluginToolMeta } from "../../../plugins/tools.js";
 import { isSubagentSessionKey } from "../../../routing/session-key.js";
-import { annotateInterSessionPromptText } from "../../../sessions/input-provenance.js";
+import {
+  annotateInterSessionPromptText,
+  projectInputProvenanceToEnforcementMetadata,
+} from "../../../sessions/input-provenance.js";
 import { isTranscriptOnlyOpenClawAssistantMessage } from "../../../shared/transcript-only-openclaw-assistant.js";
 import { resolveSkillsPromptForRun } from "../../../skills/loading/workspace.js";
 import { resolveEmbeddedRunSkillEntries } from "../../../skills/runtime/embedded-run-entries.js";
@@ -1341,6 +1344,9 @@ export async function runEmbeddedAttempt(
             runtimeToolAllowlist: effectiveToolsAllow,
             cronCreatorToolAllowlistRef: cronCreatorToolAllowlist,
             authProfileStore: params.authProfileStore,
+            activeEnforcementMetadata: projectInputProvenanceToEnforcementMetadata(
+              params.inputProvenance,
+            ),
             recordToolPrepStage: (name) => corePluginToolStages.mark(name),
             onToolOutcome: params.onToolOutcome,
             allocateToolOutcomeOrdinal: params.allocateToolOutcomeOrdinal,

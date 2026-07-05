@@ -21,6 +21,7 @@ import { resolveMergedSafeBinProfileFixtures } from "../infra/exec-safe-bin-runt
 import { logWarn } from "../logger.js";
 import type { PluginHookChannelContext } from "../plugins/hook-types.js";
 import { getPluginToolMeta } from "../plugins/tools.js";
+import type { EnforcementMetadata } from "../security/enforcement-metadata.js";
 import { annotateMilestoneToolClassifications } from "../security/tool-classification.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
 import type { SkillSnapshot } from "../skills/types.js";
@@ -544,6 +545,8 @@ export function createOpenClawCodingTools(options?: {
   allocateToolOutcomeOrdinal?: (toolCallId?: string) => number;
   /** Runtime-only resolved skill paths that the read tool may load under workspaceOnly. */
   skillsSnapshot?: SkillSnapshot;
+  /** Current turn enforcement metadata surfaced to core before-tool-call policy. */
+  activeEnforcementMetadata?: EnforcementMetadata;
 }): AnyAgentTool[] {
   const execToolName = "exec";
   const sandbox = options?.sandbox?.enabled ? options.sandbox : undefined;
@@ -1201,6 +1204,9 @@ export function createOpenClawCodingTools(options?: {
     cwd: codingRoot,
     workspaceDir: workspaceRoot,
     ...(options?.skillsSnapshot ? { skillsSnapshot: options.skillsSnapshot } : {}),
+    ...(options?.activeEnforcementMetadata
+      ? { activeEnforcementMetadata: options.activeEnforcementMetadata }
+      : {}),
     ...(sandboxRoot && allowWorkspaceWrites
       ? { sandbox: { root: sandboxRoot, bridge: sandboxFsBridge! } }
       : {}),

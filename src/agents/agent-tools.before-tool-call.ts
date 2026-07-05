@@ -53,7 +53,9 @@ import {
   type PluginHookToolInputKind,
   type PluginHookToolKind,
 } from "../plugins/types.js";
-import { copyToolClassification } from "../security/tool-classification.js";
+import type { EnforcementMetadata } from "../security/enforcement-metadata.js";
+import { copyToolClassification, getToolClassification } from "../security/tool-classification.js";
+import { evaluateToolEnforcementPolicy } from "../security/tool-enforcement-policy.js";
 import { createLazyRuntimeSurface } from "../shared/lazy-runtime.js";
 import {
   resolveSkillTelemetrySource,
@@ -141,6 +143,7 @@ export type HookContext = {
     skillSource?: SkillTelemetrySource;
     toolName?: string;
   };
+  activeEnforcementMetadata?: EnforcementMetadata;
   sandbox?: {
     root: string;
     bridge: SandboxFsBridge;
@@ -148,7 +151,11 @@ export type HookContext = {
 };
 
 type HookBlockedKind = "veto" | "failure";
-type HookBlockedReason = "plugin-before-tool-call" | "plugin-approval" | "tool-loop";
+type HookBlockedReason =
+  | "core-policy"
+  | "plugin-before-tool-call"
+  | "plugin-approval"
+  | "tool-loop";
 type HookOutcome =
   | {
       blocked: true;
@@ -585,17 +592,23 @@ function emitToolBlockedSecurityEvent(params: {
           controlId: "tool-loop-detection",
           family: "authorization",
         } as const)
-      : params.deniedReason === "plugin-approval"
+      : params.deniedReason === "core-policy"
         ? ({
-            policyId: "plugin-tool-approval",
-            controlId: "plugin-tool-approval",
-            family: "approval",
+            policyId: "fides-untrusted-content-message-egress",
+            controlId: "before-tool-call-core-policy",
+            family: "authorization",
           } as const)
-        : ({
-            policyId: "plugin-before-tool-call",
-            controlId: "before-tool-call",
-            family: "approval",
-          } as const);
+        : params.deniedReason === "plugin-approval"
+          ? ({
+              policyId: "plugin-tool-approval",
+              controlId: "plugin-tool-approval",
+              family: "approval",
+            } as const)
+          : ({
+              policyId: "plugin-before-tool-call",
+              controlId: "before-tool-call",
+              family: "approval",
+            } as const);
   emitTrustedSecurityEvent({
     category: "tool",
     action: "tool.execution.blocked",
@@ -1044,6 +1057,7 @@ async function recordLoopOutcome(args: {
 export async function runBeforeToolCallHook(args: {
   toolName: string;
   params: unknown;
+  tool?: AnyAgentTool;
   toolKind?: PluginHookToolKind;
   toolInputKind?: PluginHookToolInputKind;
   toolCallId?: string;
@@ -1125,6 +1139,21 @@ export async function runBeforeToolCallHook(args: {
 
   const hookRunner = getGlobalHookRunner();
   try {
+    const corePolicyDecision = evaluateToolEnforcementPolicy({
+      toolName,
+      params,
+      classification: args.tool ? getToolClassification(args.tool) : undefined,
+      activeEnforcementMetadata: args.ctx?.activeEnforcementMetadata,
+    });
+    if (corePolicyDecision.outcome === "deny") {
+      return {
+        blocked: true,
+        kind: "veto",
+        deniedReason: "core-policy",
+        reason: corePolicyDecision.reason,
+        params,
+      };
+    }
     const hasBeforeToolCallHooks = hookRunner?.hasHooks("before_tool_call") === true;
     const policyRegistry = getGlobalHookRunnerRegistry() ?? undefined;
     const shouldRunTrustedPolicies = hasTrustedToolPolicies(policyRegistry);
@@ -1394,6 +1423,7 @@ export function wrapToolWithBeforeToolCallHook(
       const hookMetadata = getCodeModeExecBeforeHookMetadata({ tool, params: preparedParams });
       const outcome = await runBeforeToolCallHook({
         toolName,
+        tool,
         params: hookParams,
         ...hookMetadata,
         toolCallId,

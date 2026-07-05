@@ -22,6 +22,7 @@ import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { setPluginToolMeta } from "../plugins/tools.js";
+import { setToolClassification } from "../security/tool-classification.js";
 import { createCanonicalFixtureSkill } from "../skills/test-support/test-helpers.js";
 import {
   getBeforeToolCallPolicyDiagnosticState,
@@ -1945,6 +1946,122 @@ describe("before_tool_call requireApproval handling", () => {
     expect(requestParams.turnSourceTo).toBeUndefined();
     expect(requestParams.turnSourceAccountId).toBeUndefined();
     expect(requestParams.turnSourceThreadId).toBeUndefined();
+  });
+
+  it("blocks explicit outbound message sends from untrusted requests before plugin hooks run", async () => {
+    hookRunner.hasHooks.mockReturnValue(true);
+    hookRunner.runBeforeToolCall.mockResolvedValue(undefined);
+
+    const messageTool = {
+      name: "message",
+      description: "message",
+      parameters: { type: "object", properties: {} },
+      execute: vi.fn(),
+    } as unknown as AnyAgentTool;
+    setToolClassification(messageTool, {
+      version: 1,
+      consequential: ["network_egress"],
+      egressArguments: [
+        { path: "message", kind: "content" },
+        { path: "target", kind: "destination" },
+      ],
+    });
+
+    const result = await runBeforeToolCallHook({
+      toolName: "message",
+      tool: messageTool,
+      params: { action: "send", target: "user:42", message: "forward this" },
+      ctx: {
+        agentId: "main",
+        sessionKey: "main",
+        activeEnforcementMetadata: {
+          version: 1,
+          provenance: { trust: "untrusted", sourceKind: "external_user", sourceLabel: "discord" },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      blocked: true,
+      kind: "veto",
+      deniedReason: "core-policy",
+    });
+    expect(hookRunner.runBeforeToolCall).not.toHaveBeenCalled();
+  });
+
+  it("allows untrusted current-session replies and still runs plugin hook policy", async () => {
+    hookRunner.hasHooks.mockReturnValue(true);
+    hookRunner.runBeforeToolCall.mockResolvedValue({
+      params: { action: "send", message: "plugin-adjusted" },
+    });
+
+    const messageTool = {
+      name: "message",
+      description: "message",
+      parameters: { type: "object", properties: {} },
+      execute: vi.fn(),
+    } as unknown as AnyAgentTool;
+    setToolClassification(messageTool, {
+      version: 1,
+      consequential: ["network_egress"],
+      egressArguments: [
+        { path: "message", kind: "content" },
+        { path: "target", kind: "destination" },
+      ],
+    });
+
+    const result = await runBeforeToolCallHook({
+      toolName: "message",
+      tool: messageTool,
+      params: { action: "send", message: "local reply" },
+      ctx: {
+        agentId: "main",
+        sessionKey: "main",
+        activeEnforcementMetadata: {
+          version: 1,
+          provenance: { trust: "untrusted", sourceKind: "external_user" },
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      blocked: false,
+      params: { action: "send", message: "plugin-adjusted" },
+    });
+    expect(hookRunner.runBeforeToolCall).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates active enforcement metadata into wrapped coding tools", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-core-policy-"));
+    const tools = createOpenClawCodingTools({
+      workspaceDir: tempDir,
+      activeEnforcementMetadata: {
+        version: 1,
+        provenance: { trust: "untrusted", sourceKind: "external_user", sourceLabel: "discord" },
+      },
+    });
+    const messageTool = tools.find((tool) => tool.name === "message");
+    if (!messageTool) {
+      throw new Error("missing message tool");
+    }
+
+    const result = await messageTool.execute(
+      "message-core-policy",
+      {
+        action: "send",
+        target: "user:42",
+        message: "forward this",
+      },
+      undefined,
+      undefined,
+    );
+
+    const details = requireRecord(
+      requireRecord(result, "blocked message result").details,
+      "blocked message details",
+    );
+    expect(details.status).toBe("blocked");
+    expect(details.deniedReason).toBe("core-policy");
   });
 });
 
