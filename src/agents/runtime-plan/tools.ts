@@ -8,6 +8,7 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { ProviderRuntimePluginHandle } from "../../plugins/provider-hook-runtime.js";
 import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
 import { copyPluginToolMeta } from "../../plugins/tools.js";
+import { copyToolClassification } from "../../security/tool-classification.js";
 import { copyBeforeToolCallHookMarker } from "../before-tool-call-metadata.js";
 import { copyChannelAgentToolMeta } from "../channel-tools.js";
 import {
@@ -65,6 +66,7 @@ function copyRuntimeToolMetadata(source: AgentTool, target: AgentTool): void {
   }
   copyPluginToolMeta(source as never, target as never);
   copyChannelAgentToolMeta(source as never, target as never);
+  copyToolClassification(source as never, target as never);
   copyBeforeToolCallHookMarker(source as never, target as never);
   copyToolTerminalPresentation(source as never, target as never);
 }

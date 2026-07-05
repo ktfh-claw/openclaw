@@ -4,6 +4,7 @@
  * and channel metadata on normalized tools.
  */
 import { copyPluginToolMeta } from "../plugins/tools.js";
+import { copyToolClassification } from "../security/tool-classification.js";
 import {
   normalizeToolParameterSchema,
   type ToolParameterSchemaOptions,
@@ -72,6 +73,7 @@ export function normalizeToolParameters(
   function preserveToolMeta(target: AnyAgentTool): AnyAgentTool {
     copyPluginToolMeta(tool, target);
     copyChannelAgentToolMeta(tool as never, target as never);
+    copyToolClassification(tool as never, target as never);
     copyBeforeToolCallHookMarker(tool, target);
     copyToolTerminalPresentation(tool, target);
     return target;

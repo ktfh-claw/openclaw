@@ -53,6 +53,7 @@ import {
   type PluginHookToolInputKind,
   type PluginHookToolKind,
 } from "../plugins/types.js";
+import { copyToolClassification } from "../security/tool-classification.js";
 import { createLazyRuntimeSurface } from "../shared/lazy-runtime.js";
 import {
   resolveSkillTelemetrySource,
@@ -1567,6 +1568,7 @@ export function wrapToolWithBeforeToolCallHook(
   };
   copyPluginToolMeta(tool, wrappedTool);
   copyChannelAgentToolMeta(tool as never, wrappedTool as never);
+  copyToolClassification(tool as never, wrappedTool as never);
   copyToolTerminalPresentation(tool, wrappedTool);
   Object.defineProperty(wrappedTool, BEFORE_TOOL_CALL_WRAPPED, {
     value: true,
@@ -1613,6 +1615,7 @@ export function rewrapToolWithBeforeToolCallHook(
   delete (rewrapSource as unknown as Record<symbol, unknown>)[BEFORE_TOOL_CALL_WRAPPED];
   copyPluginToolMeta(tool, rewrapSource);
   copyChannelAgentToolMeta(tool as never, rewrapSource as never);
+  copyToolClassification(tool as never, rewrapSource as never);
   copyToolTerminalPresentation(tool, rewrapSource);
   return wrapToolWithBeforeToolCallHook(rewrapSource, ctx ?? preservedContext, options);
 }

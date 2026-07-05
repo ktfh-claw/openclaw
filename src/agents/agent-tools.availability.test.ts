@@ -4,6 +4,7 @@
  * the restricted node-safe subset.
  */
 import { describe, expect, it, vi } from "vitest";
+import { requireToolClassification } from "../security/tool-classification.js";
 import "./test-helpers/fast-coding-tools.js";
 import "./test-helpers/fast-openclaw-tools.js";
 import { createOpenClawCodingTools } from "./agent-tools.js";
@@ -50,5 +51,16 @@ describe("tool availability", () => {
     expect(toolNames).not.toContain("message");
     expect(toolNames).not.toContain("sessions_send");
     expect(toolNames).not.toContain("subagents");
+  });
+
+  it("keeps issue #4 classifications on the assembled milestone tools that are present", () => {
+    const tools = createOpenClawCodingTools();
+
+    for (const toolName of ["exec", "gateway", "message", "web_fetch", "web_search"]) {
+      const tool = tools.find((entry) => entry.name === toolName);
+      if (tool) {
+        expect(requireToolClassification(tool)).toMatchObject({ version: 1 });
+      }
+    }
   });
 });

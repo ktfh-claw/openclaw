@@ -4,6 +4,7 @@
  * channel, and before_tool_call metadata on wrapped tools.
  */
 import { copyPluginToolMeta } from "../plugins/tools.js";
+import { copyToolClassification } from "../security/tool-classification.js";
 import { bindAbortRelay } from "../utils/fetch-timeout.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
 import { copyBeforeToolCallHookMarker } from "./before-tool-call-metadata.js";
@@ -75,6 +76,7 @@ export function wrapToolWithAbortSignal(
   };
   copyPluginToolMeta(tool, wrappedTool);
   copyChannelAgentToolMeta(tool as never, wrappedTool as never);
+  copyToolClassification(tool as never, wrappedTool as never);
   copyBeforeToolCallHookMarker(tool, wrappedTool);
   return wrappedTool;
 }

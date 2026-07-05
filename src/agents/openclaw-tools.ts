@@ -12,6 +12,7 @@ import { callGateway } from "../gateway/call.js";
 import { isEmbeddedMode } from "../infra/embedded-mode.js";
 import { getActiveSecretsRuntimeConfigSnapshot } from "../secrets/runtime-state.js";
 import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime-web-tools-state.js";
+import { annotateMilestoneToolClassifications } from "../security/tool-classification.js";
 import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
 import { resolveTranscriptsConfig } from "../transcripts/config.js";
 import { normalizeDeliveryContext } from "../utils/delivery-context.js";
@@ -586,7 +587,7 @@ export function createOpenClawTools(
     wrapToolWithGatewayCallerIdentity(tool, gatewayCallerIdentity);
 
   if (options?.wrapBeforeToolCallHook === false) {
-    return allTools.map(wrapGatewayCallerIdentity);
+    return annotateMilestoneToolClassifications(allTools.map(wrapGatewayCallerIdentity));
   }
   const defaultHookContext: HookContext = {
     ...(hookAgentId ? { agentId: hookAgentId } : {}),
@@ -601,13 +602,15 @@ export function createOpenClawTools(
     ...options?.beforeToolCallHookContext,
   };
   options?.recordToolPrepStage?.("openclaw-tools:tool-hooks");
-  return allTools
-    .map((tool) =>
-      isToolWrappedWithBeforeToolCallHook(tool)
-        ? tool
-        : wrapToolWithBeforeToolCallHook(tool, hookContext),
-    )
-    .map(wrapGatewayCallerIdentity);
+  return annotateMilestoneToolClassifications(
+    allTools
+      .map((tool) =>
+        isToolWrappedWithBeforeToolCallHook(tool)
+          ? tool
+          : wrapToolWithBeforeToolCallHook(tool, hookContext),
+      )
+      .map(wrapGatewayCallerIdentity),
+  );
 }
 
 export const testing = {

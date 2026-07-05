@@ -1,4 +1,5 @@
 import { copyPluginToolMeta } from "../plugins/tools.js";
+import { copyToolClassification } from "../security/tool-classification.js";
 /**
  * Adjusts exec/process tool descriptions for long-running follow-up behavior.
  * Cron-aware runs can point models at scheduled follow-ups; cronless runs keep
@@ -14,6 +15,7 @@ function replaceDescription(tool: AnyAgentTool, description: string): AnyAgentTo
   const updated = { ...tool, description };
   copyPluginToolMeta(tool, updated);
   copyChannelAgentToolMeta(tool as never, updated as never);
+  copyToolClassification(tool as never, updated as never);
   copyBeforeToolCallHookMarker(tool, updated);
   copyToolTerminalPresentation(tool, updated);
   return updated;
