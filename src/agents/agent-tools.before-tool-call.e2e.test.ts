@@ -2017,6 +2017,8 @@ describe("before_tool_call requireApproval handling", () => {
       ctx: {
         agentId: "main",
         sessionKey: "main",
+        turnSourceChannel: "slack",
+        turnSourceTo: "user:42",
         activeEnforcementMetadata: {
           version: 1,
           provenance: { trust: "untrusted", sourceKind: "external_user" },
@@ -2031,10 +2033,95 @@ describe("before_tool_call requireApproval handling", () => {
     expect(hookRunner.runBeforeToolCall).toHaveBeenCalledTimes(1);
   });
 
+  it("allows explicit same-audience replies from untrusted requests", async () => {
+    hookRunner.hasHooks.mockReturnValue(true);
+    hookRunner.runBeforeToolCall.mockResolvedValue(undefined);
+
+    const messageTool = {
+      name: "message",
+      description: "message",
+      parameters: { type: "object", properties: {} },
+      execute: vi.fn(),
+    } as unknown as AnyAgentTool;
+    setToolClassification(messageTool, {
+      version: 1,
+      consequential: ["network_egress"],
+      egressArguments: [
+        { path: "message", kind: "content" },
+        { path: "target", kind: "destination" },
+      ],
+    });
+
+    const result = await runBeforeToolCallHook({
+      toolName: "message",
+      tool: messageTool,
+      params: { action: "send", target: "user:42", message: "reply in place" },
+      ctx: {
+        agentId: "main",
+        sessionKey: "main",
+        turnSourceChannel: "slack",
+        turnSourceTo: "user:42",
+        activeEnforcementMetadata: {
+          version: 1,
+          provenance: { trust: "untrusted", sourceKind: "external_user" },
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      blocked: false,
+      params: { action: "send", target: "user:42", message: "reply in place" },
+    });
+    expect(hookRunner.runBeforeToolCall).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks ambiguous unrouted untrusted sends before plugin hooks run", async () => {
+    hookRunner.hasHooks.mockReturnValue(true);
+    hookRunner.runBeforeToolCall.mockResolvedValue(undefined);
+
+    const messageTool = {
+      name: "message",
+      description: "message",
+      parameters: { type: "object", properties: {} },
+      execute: vi.fn(),
+    } as unknown as AnyAgentTool;
+    setToolClassification(messageTool, {
+      version: 1,
+      consequential: ["network_egress"],
+      egressArguments: [
+        { path: "message", kind: "content" },
+        { path: "target", kind: "destination" },
+      ],
+    });
+
+    const result = await runBeforeToolCallHook({
+      toolName: "message",
+      tool: messageTool,
+      params: { action: "send", message: "where does this go?" },
+      ctx: {
+        agentId: "main",
+        sessionKey: "main",
+        activeEnforcementMetadata: {
+          version: 1,
+          provenance: { trust: "untrusted", sourceKind: "external_user" },
+        },
+      },
+    });
+
+    expect(result).toMatchObject({
+      blocked: true,
+      kind: "veto",
+      deniedReason: "core-policy",
+    });
+    expect(hookRunner.runBeforeToolCall).not.toHaveBeenCalled();
+  });
+
   it("propagates active enforcement metadata into wrapped coding tools", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-core-policy-"));
     const tools = createOpenClawCodingTools({
       workspaceDir: tempDir,
+      currentChannelId: "D123",
+      currentMessagingTarget: "user:99",
       activeEnforcementMetadata: {
         version: 1,
         provenance: { trust: "untrusted", sourceKind: "external_user", sourceLabel: "discord" },

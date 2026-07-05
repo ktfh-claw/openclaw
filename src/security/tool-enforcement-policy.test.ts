@@ -26,6 +26,10 @@ describe("evaluateToolEnforcementPolicy", () => {
             sourceLabel: "discord",
           },
         },
+        messageAudience: {
+          turnSourceChannel: "slack",
+          turnSourceTo: "user:99",
+        },
       }),
     ).toMatchObject({
       outcome: "deny",
@@ -46,8 +50,78 @@ describe("evaluateToolEnforcementPolicy", () => {
             sourceKind: "external_user",
           },
         },
+        messageAudience: {
+          turnSourceChannel: "slack",
+          turnSourceTo: "user:42",
+        },
       }),
     ).toEqual({ outcome: "allow" });
+  });
+
+  it("allows explicit sends when they stay within the current audience", () => {
+    expect(
+      evaluateToolEnforcementPolicy({
+        toolName: "message",
+        params: { action: "send", target: "user:42", message: "reply in place" },
+        classification,
+        activeEnforcementMetadata: {
+          version: 1,
+          provenance: {
+            trust: "untrusted",
+            sourceKind: "external_user",
+          },
+        },
+        messageAudience: {
+          turnSourceChannel: "slack",
+          turnSourceTo: "user:42",
+        },
+      }),
+    ).toEqual({ outcome: "allow" });
+  });
+
+  it("blocks thread-broadening sends from untrusted content", () => {
+    expect(
+      evaluateToolEnforcementPolicy({
+        toolName: "message",
+        params: { action: "send", target: "channel:C1", topLevel: true, message: "widen this" },
+        classification,
+        activeEnforcementMetadata: {
+          version: 1,
+          provenance: {
+            trust: "untrusted",
+            sourceKind: "external_user",
+          },
+        },
+        messageAudience: {
+          turnSourceChannel: "slack",
+          turnSourceTo: "channel:C1",
+          turnSourceThreadId: "111.222",
+        },
+      }),
+    ).toMatchObject({
+      outcome: "deny",
+      policyId: "fides-untrusted-content-message-egress",
+    });
+  });
+
+  it("fails closed when the current audience cannot be resolved", () => {
+    expect(
+      evaluateToolEnforcementPolicy({
+        toolName: "message",
+        params: { action: "send", message: "where does this go?" },
+        classification,
+        activeEnforcementMetadata: {
+          version: 1,
+          provenance: {
+            trust: "untrusted",
+            sourceKind: "external_user",
+          },
+        },
+      }),
+    ).toMatchObject({
+      outcome: "deny",
+      policyId: "fides-untrusted-content-message-egress-ambiguous",
+    });
   });
 
   it("allows trusted content even with explicit routing", () => {

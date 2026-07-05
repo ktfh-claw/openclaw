@@ -1144,6 +1144,11 @@ export async function runBeforeToolCallHook(args: {
       params,
       classification: args.tool ? getToolClassification(args.tool) : undefined,
       activeEnforcementMetadata: args.ctx?.activeEnforcementMetadata,
+      messageAudience: {
+        turnSourceChannel: args.ctx?.turnSourceChannel,
+        turnSourceTo: args.ctx?.turnSourceTo,
+        turnSourceThreadId: args.ctx?.turnSourceThreadId,
+      },
     });
     if (corePolicyDecision.outcome === "deny") {
       return {
