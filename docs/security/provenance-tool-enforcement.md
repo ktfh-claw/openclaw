@@ -73,6 +73,22 @@ The narrowed built-in rule is operator-configurable under `security.provenanceEn
 
 This config only affects the narrowed built-in rule family. It does not disable generic diagnostics, plugin approval events, or non-FIDES tool-loop protections.
 
+## Regression harness
+
+Issue `#12` adds a small permanent regression harness at:
+
+- `src/security/provenance-enforcement-regression.test.ts`
+
+The harness is intentionally narrow enough to run continuously and locks down one representative scenario from each required class:
+
+- untrusted outbound exfiltration is blocked before tool execution
+- trusted/operator-intended outbound routing is allowed
+- mixed trusted/untrusted context is treated conservatively
+- replay/compaction-preserved provenance still affects later routing decisions
+- operator-facing diagnostics stay useful without leaking blocked content or secret-like provenance labels
+
+Keep future extensions small and scenario-driven. If a new rule family or transport boundary lands, prefer adding one representative regression here plus any lower-level unit coverage needed for the new seam.
+
 ## Decision diagnostics
 
 When diagnostics are enabled and the audit mode allows emission, OpenClaw records a trusted `security.event` for the provenance-aware decision with:
