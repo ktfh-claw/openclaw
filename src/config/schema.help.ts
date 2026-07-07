@@ -61,6 +61,18 @@ export const FIELD_HELP: Record<string, string> = {
     'Sensitive log/transcript redaction mode: "off" disables general log and transcript masking, while "tools" redacts sensitive tool/config payload fields in those sinks. Safety-boundary UI, tool, and diagnostic payloads may still redact even when this is "off".',
   "logging.redactPatterns":
     "Additional custom redact regex patterns applied to log output, persisted transcript text, and safety-boundary UI/tool/diagnostic payloads before emission. Use this to mask org-specific tokens and identifiers not covered by built-in redaction rules.",
+  security:
+    "Security policy surfaces for audit suppression, operator-owned install controls, and provenance-aware enforcement observability. Keep these settings conservative and prefer explicit opt-ins for broader audit collection.",
+  "security.audit":
+    "Security audit report controls, including accepted standing findings that should remain recorded but not block active audit summaries. Use this only for documented operator risk acceptance, not to hide unknown findings.",
+  "security.audit.suppressions":
+    "Ordered accepted security audit findings to suppress from the active report while preserving suppressed-finding evidence. Each suppression should name one exact check id plus optional title/detail match text and operator rationale.",
+  "security.provenanceEnforcement":
+    "Controls the built-in narrowed provenance-aware source-to-sink enforcement slice for consequential tool calls. Use this section to keep the deterministic rule enabled while tuning how much operator-facing audit detail is emitted.",
+  "security.provenanceEnforcement.enabled":
+    "Master switch for the built-in provenance-aware before-tool-call policy. Leave enabled for the scoped FIDES-style message-egress protection; set false only as an explicit rollback while debugging or during controlled compatibility testing.",
+  "security.provenanceEnforcement.audit":
+    'Audit emission mode for provenance-aware consequential tool decisions: "off" emits no dedicated policy decision security events, "blocked" emits deny decisions only, and "all" emits both allow and deny decisions. Keep "blocked" unless you actively need allow-path audit traces for verification or regression work.',
   cli: "CLI presentation controls for local command output behavior such as banner and tagline style. Use this section to keep startup output aligned with operator preference without changing runtime behavior.",
   "cli.banner":
     "CLI startup banner controls for title/version line and tagline style behavior. Keep banner enabled for fast version/context checks, then tune tagline mode to your preferred noise level.",

@@ -131,6 +131,13 @@ const SecuritySchema = z
       })
       .strict()
       .optional(),
+    provenanceEnforcement: z
+      .object({
+        enabled: z.boolean().optional(),
+        audit: z.union([z.literal("off"), z.literal("blocked"), z.literal("all")]).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .optional();

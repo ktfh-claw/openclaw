@@ -59,6 +59,39 @@ describe("boolean config validation", () => {
   });
 });
 
+describe("security.provenanceEnforcement config", () => {
+  it("accepts explicit provenance enforcement audit settings", () => {
+    const result = OpenClawSchema.safeParse({
+      security: {
+        provenanceEnforcement: {
+          enabled: true,
+          audit: "all",
+        },
+      },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.security?.provenanceEnforcement).toEqual({
+        enabled: true,
+        audit: "all",
+      });
+    }
+  });
+
+  it("rejects unknown provenance enforcement audit modes", () => {
+    const result = OpenClawSchema.safeParse({
+      security: {
+        provenanceEnforcement: {
+          audit: "verbose",
+        },
+      },
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
 describe("model provider localService config", () => {
   it("accepts standalone timeout overlays for bundled model providers", () => {
     const result = OpenClawSchema.safeParse({

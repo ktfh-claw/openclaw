@@ -55,7 +55,14 @@ describe("evaluateToolEnforcementPolicy", () => {
           turnSourceTo: "user:42",
         },
       }),
-    ).toEqual({ outcome: "allow" });
+    ).toMatchObject({
+      outcome: "allow",
+      policyId: "fides-untrusted-content-message-egress",
+      audit: {
+        provenanceTrust: "untrusted",
+        currentAudienceResolved: true,
+      },
+    });
   });
 
   it("allows explicit sends when they stay within the current audience", () => {
@@ -76,7 +83,13 @@ describe("evaluateToolEnforcementPolicy", () => {
           turnSourceTo: "user:42",
         },
       }),
-    ).toEqual({ outcome: "allow" });
+    ).toMatchObject({
+      outcome: "allow",
+      policyId: "fides-untrusted-content-message-egress",
+      audit: {
+        currentAudienceResolved: true,
+      },
+    });
   });
 
   it("blocks thread-broadening sends from untrusted content", () => {

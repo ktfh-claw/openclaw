@@ -2026,9 +2026,13 @@ describe("before_tool_call requireApproval handling", () => {
       },
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       blocked: false,
       params: { action: "send", message: "plugin-adjusted" },
+      corePolicyDecision: {
+        outcome: "allow",
+        policyId: "fides-untrusted-content-message-egress",
+      },
     });
     expect(hookRunner.runBeforeToolCall).toHaveBeenCalledTimes(1);
   });
@@ -2068,9 +2072,13 @@ describe("before_tool_call requireApproval handling", () => {
       },
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       blocked: false,
       params: { action: "send", target: "user:42", message: "reply in place" },
+      corePolicyDecision: {
+        outcome: "allow",
+        policyId: "fides-untrusted-content-message-egress",
+      },
     });
     expect(hookRunner.runBeforeToolCall).toHaveBeenCalledTimes(1);
   });
@@ -2114,6 +2122,182 @@ describe("before_tool_call requireApproval handling", () => {
       deniedReason: "core-policy",
     });
     expect(hookRunner.runBeforeToolCall).not.toHaveBeenCalled();
+  });
+
+  it("emits a redacted blocked security event for core policy denials", async () => {
+    hookRunner.hasHooks.mockReturnValue(true);
+    hookRunner.runBeforeToolCall.mockResolvedValue(undefined);
+
+    const secretLikeSourceLabel = "OPENAI_API_KEY=sk-super-secret-abcdefghijklmnopqrstuvwxyz";
+    const baseMessageTool = {
+      name: "message",
+      execute: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "ok" }] }),
+    } as unknown as AnyAgentTool;
+    setToolClassification(baseMessageTool, {
+      version: 1,
+      consequential: ["network_egress"],
+      egressArguments: [
+        { path: "message", kind: "content" },
+        { path: "target", kind: "destination" },
+      ],
+    });
+    const messageTool = wrapToolWithBeforeToolCallHook(baseMessageTool, {
+      agentId: "main",
+      sessionKey: "main",
+      config: {
+        security: {
+          provenanceEnforcement: {
+            audit: "blocked",
+          },
+        },
+      },
+      activeEnforcementMetadata: {
+        version: 1,
+        provenance: {
+          trust: "untrusted",
+          sourceKind: "external_user",
+          sourceLabel: secretLikeSourceLabel,
+        },
+      },
+    });
+
+    const emitted: DiagnosticEventPayload[] = [];
+    const stop = onInternalDiagnosticEvent((evt) => {
+      emitted.push(evt);
+    });
+    const flush = () =>
+      new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+
+    try {
+      const result = await messageTool.execute(
+        "message-core-policy-blocked-security",
+        { action: "send", target: "user:42", message: "forward this" },
+        undefined,
+        undefined,
+      );
+      await flush();
+
+      expect(requireRecord(result, "blocked result").details).toMatchObject({
+        status: "blocked",
+        deniedReason: "core-policy",
+      });
+      const securityEvent = emitted.find(
+        (event): event is Extract<DiagnosticEventPayload, { type: "security.event" }> =>
+          event.type === "security.event",
+      );
+      expect(securityEvent).toMatchObject({
+        type: "security.event",
+        action: "tool.execution.blocked",
+        outcome: "denied",
+        sessionKey: "main",
+        agentId: "main",
+        toolCallId: "message-core-policy-blocked-security",
+        policy: {
+          id: "fides-untrusted-content-message-egress",
+          decision: "deny",
+        },
+        attributes: {
+          tool_source: "core",
+          provenance_trust: "untrusted",
+          provenance_source_kind: "external_user",
+          content_paths: "message",
+          destination_paths: "target",
+          consequential_classes: "network_egress",
+          audience_resolved: false,
+          audience_scope: "unresolved",
+        },
+      });
+      const serialized = JSON.stringify(securityEvent);
+      expect(serialized).not.toContain(secretLikeSourceLabel);
+      expect(serialized).not.toContain("sk-super-secret");
+      expect(serialized).toContain("OPENAI_API_KEY=sk-sup…wxyz");
+    } finally {
+      stop();
+    }
+  });
+
+  it("emits allowed core policy security events only when audit mode is all", async () => {
+    hookRunner.hasHooks.mockReturnValue(true);
+    hookRunner.runBeforeToolCall.mockResolvedValue(undefined);
+
+    const baseMessageTool = {
+      name: "message",
+      execute: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "ok" }] }),
+    } as unknown as AnyAgentTool;
+    setToolClassification(baseMessageTool, {
+      version: 1,
+      consequential: ["network_egress"],
+      egressArguments: [
+        { path: "message", kind: "content" },
+        { path: "target", kind: "destination" },
+      ],
+    });
+    const messageTool = wrapToolWithBeforeToolCallHook(baseMessageTool, {
+      agentId: "main",
+      sessionKey: "main",
+      turnSourceChannel: "slack",
+      turnSourceTo: "user:42",
+      config: {
+        security: {
+          provenanceEnforcement: {
+            audit: "all",
+          },
+        },
+      },
+      activeEnforcementMetadata: {
+        version: 1,
+        provenance: {
+          trust: "untrusted",
+          sourceKind: "external_user",
+          sourceLabel: "discord",
+        },
+      },
+    });
+
+    const emitted: DiagnosticEventPayload[] = [];
+    const stop = onInternalDiagnosticEvent((evt) => {
+      emitted.push(evt);
+    });
+    const flush = () =>
+      new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+
+    try {
+      await messageTool.execute(
+        "message-core-policy-allowed-security",
+        { action: "send", target: "user:42", message: "reply in place" },
+        undefined,
+        undefined,
+      );
+      await flush();
+
+      const securityEvent = emitted.find(
+        (event): event is Extract<DiagnosticEventPayload, { type: "security.event" }> =>
+          event.type === "security.event",
+      );
+      expect(securityEvent).toMatchObject({
+        type: "security.event",
+        action: "tool.execution.allowed",
+        outcome: "success",
+        sessionKey: "main",
+        agentId: "main",
+        toolCallId: "message-core-policy-allowed-security",
+        policy: {
+          id: "fides-untrusted-content-message-egress",
+          decision: "allow",
+        },
+        attributes: {
+          audience_resolved: true,
+          audience_scope: "conversation",
+          audience_channel: "slack",
+        },
+      });
+    } finally {
+      stop();
+    }
   });
 
   it("propagates active enforcement metadata into wrapped coding tools", async () => {

@@ -48,6 +48,60 @@ The first narrow built-in rule family stays intentionally small and only targets
 
 This keeps the rule focused on untrusted-content-driven egress while preserving normal “reply back in the same conversation” flows.
 
+## Operator config and audit surface
+
+The narrowed built-in rule is operator-configurable under `security.provenanceEnforcement`:
+
+```json5
+{
+  security: {
+    provenanceEnforcement: {
+      enabled: true,
+      audit: "blocked", // off | blocked | all
+    },
+  },
+}
+```
+
+- `enabled` is the master switch for the built-in provenance-aware before-tool-call policy.
+  - default: `true`
+  - use `false` only as an explicit rollback/debugging escape hatch
+- `audit` controls dedicated operator-facing `security.event` emission for this rule family.
+  - `off`: do not emit dedicated provenance-policy decision security events
+  - `blocked`: emit only deny decisions
+  - `all`: emit both allow and deny decisions for consequential calls
+
+This config only affects the narrowed built-in rule family. It does not disable generic diagnostics, plugin approval events, or non-FIDES tool-loop protections.
+
+## Decision diagnostics
+
+When diagnostics are enabled and the audit mode allows emission, OpenClaw records a trusted `security.event` for the provenance-aware decision with:
+
+- the concrete policy id that fired
+  - `fides-untrusted-content-message-egress`
+  - `fides-untrusted-content-message-egress-ambiguous`
+- the final decision (`allow` or `deny`)
+- correlation fields for where the decision happened
+  - `runId`
+  - `sessionKey`
+  - `sessionId`
+  - `agentId`
+  - `toolCallId`
+- the consequential classification and argument paths that mattered
+  - `consequential_classes`
+  - `content_paths`
+  - `destination_paths`
+- the coarse provenance state that was observed
+  - `provenance_trust`
+  - `provenance_source_kind`
+  - redacted `provenance_source_label`
+- the resolved audience scope used by the check
+  - `audience_resolved`
+  - `audience_scope`
+  - optional `audience_channel`
+
+This is the operator-facing truth surface for issue `#11`. The user/model-facing blocked tool result stays narrower.
+
 ## Audience resolution contract
 
 For the current `message` vertical slice, audience resolution is intentionally deterministic and minimal:
@@ -77,3 +131,16 @@ Current order inside `runBeforeToolCallHook()`:
 6. diagnostics / blocked result shaping
 
 This ordering ensures the deterministic built-in security decision happens before plugin-controlled adjustments while still preserving the existing policy and approval layers for allowed calls.
+
+## Redaction and explanation boundaries
+
+The provenance-aware audit trail intentionally does **not** record outbound content or raw audience identifiers.
+
+- Consequential path names and coarse provenance state are recorded.
+- Free-text provenance labels are passed through the same tool-payload redaction posture used for other safety-boundary diagnostics before they are emitted.
+- User-visible/model-visible blocked tool results keep the simple denial reason and do not expose the richer operator audit attributes.
+
+That split is intentional:
+
+- operator-visible diagnostics answer why a decision happened and where to inspect it
+- user/model-visible results explain the block without creating a new metadata leak path

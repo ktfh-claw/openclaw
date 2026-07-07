@@ -101,6 +101,11 @@ export type DiagnosticSecurityEventControl = {
 export type DiagnosticSecurityEvent = DiagnosticBaseEvent & {
   type: "security.event";
   eventId: string;
+  runId?: string;
+  sessionKey?: string;
+  sessionId?: string;
+  agentId?: string;
+  toolCallId?: string;
   category:
     | "auth"
     | "approval"

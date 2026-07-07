@@ -54,8 +54,15 @@ import {
   type PluginHookToolKind,
 } from "../plugins/types.js";
 import type { EnforcementMetadata } from "../security/enforcement-metadata.js";
+import {
+  resolveProvenanceEnforcementConfig,
+  shouldAuditProvenanceDecision,
+} from "../security/provenance-enforcement-config.js";
 import { copyToolClassification, getToolClassification } from "../security/tool-classification.js";
-import { evaluateToolEnforcementPolicy } from "../security/tool-enforcement-policy.js";
+import {
+  evaluateToolEnforcementPolicy,
+  type ToolEnforcementDecision,
+} from "../security/tool-enforcement-policy.js";
 import { createLazyRuntimeSurface } from "../shared/lazy-runtime.js";
 import {
   resolveSkillTelemetrySource,
@@ -164,12 +171,14 @@ type HookOutcome =
       deniedReason?: HookBlockedReason;
       reason: string;
       params?: unknown;
+      corePolicyDecision?: ToolEnforcementDecision;
     }
   | {
       blocked: false;
       params: unknown;
       approvalResolution?: PluginApprovalResolution;
       deferredApproval?: DeferredPluginToolApproval;
+      corePolicyDecision?: ToolEnforcementDecision;
     };
 type PluginApprovalRequest = NonNullable<PluginHookBeforeToolCallResult["requireApproval"]>;
 
@@ -241,6 +250,8 @@ const MAX_PENDING_TERMINAL_PRESENTATIONS = 1024;
 const LOOP_WARNING_BUCKET_SIZE = 10;
 const MAX_LOOP_WARNING_KEYS = 256;
 const MAX_TERMINAL_PRESENTATION_CHARS = 2_000;
+const MAX_CORE_POLICY_AUDIT_TEXT_CHARS = 120;
+const MAX_CORE_POLICY_AUDIT_REASON_CHARS = 240;
 const pendingTerminalPresentationByToolCall = new Map<
   string,
   {
@@ -637,6 +648,104 @@ function emitToolBlockedSecurityEvent(params: {
     attributes: {
       tool_source: params.toolIdentity.toolSource,
       ...(params.paramsSummary ? { params_kind: params.paramsSummary.kind } : {}),
+    },
+  });
+}
+
+function sanitizeCorePolicyAuditText(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const redacted = redactToolDetail(value).trim();
+  if (!redacted) {
+    return undefined;
+  }
+  return truncateUtf16Safe(redacted, MAX_CORE_POLICY_AUDIT_TEXT_CHARS);
+}
+
+function sanitizeCorePolicyAuditReason(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const redacted = redactToolDetail(value).trim();
+  if (!redacted) {
+    return undefined;
+  }
+  return truncateUtf16Safe(redacted, MAX_CORE_POLICY_AUDIT_REASON_CHARS);
+}
+
+function emitCorePolicyDecisionSecurityEvent(params: {
+  ctx?: HookContext;
+  toolIdentity: ToolDiagnosticIdentity;
+  toolName: string;
+  toolCallId?: string;
+  trace?: DiagnosticTraceContext;
+  paramsSummary?: DiagnosticToolParamsSummary;
+  decision: ToolEnforcementDecision;
+}): void {
+  if (!params.decision.policyId || !params.decision.audit) {
+    return;
+  }
+  const cfg = resolveProvenanceEnforcementConfig(params.ctx?.config);
+  if (!shouldAuditProvenanceDecision(cfg, params.decision.outcome)) {
+    return;
+  }
+  const audit = params.decision.audit;
+  emitTrustedSecurityEvent({
+    ...(params.ctx?.runId ? { runId: params.ctx.runId } : {}),
+    ...(params.ctx?.sessionKey ? { sessionKey: params.ctx.sessionKey } : {}),
+    ...(params.ctx?.sessionId ? { sessionId: params.ctx.sessionId } : {}),
+    ...(params.ctx?.agentId ? { agentId: params.ctx.agentId } : {}),
+    ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
+    category: "tool",
+    action:
+      params.decision.outcome === "deny" ? "tool.execution.blocked" : "tool.execution.allowed",
+    outcome: params.decision.outcome === "deny" ? "denied" : "success",
+    severity: params.decision.outcome === "deny" ? "medium" : "info",
+    reason: "core-policy",
+    ...(params.trace ? { trace: params.trace } : {}),
+    actor: {
+      kind: "agent",
+    },
+    target: {
+      kind: "tool",
+      name: params.toolName,
+      ...(params.toolIdentity.toolOwner ? { owner: params.toolIdentity.toolOwner } : {}),
+    },
+    policy: {
+      id: params.decision.policyId,
+      decision: params.decision.outcome,
+      ...(params.decision.outcome === "deny" &&
+      sanitizeCorePolicyAuditReason(params.decision.reason)
+        ? { reason: sanitizeCorePolicyAuditReason(params.decision.reason) }
+        : {}),
+    },
+    control: {
+      id: "before-tool-call-core-policy",
+      family: "authorization",
+    },
+    attributes: {
+      tool_source: params.toolIdentity.toolSource,
+      ...(params.paramsSummary ? { params_kind: params.paramsSummary.kind } : {}),
+      provenance_trust: audit.provenanceTrust,
+      ...(audit.provenanceSourceKind ? { provenance_source_kind: audit.provenanceSourceKind } : {}),
+      ...(sanitizeCorePolicyAuditText(audit.provenanceSourceLabel)
+        ? { provenance_source_label: sanitizeCorePolicyAuditText(audit.provenanceSourceLabel) }
+        : {}),
+      ...(audit.consequential.length > 0
+        ? { consequential_classes: audit.consequential.join(",") }
+        : {}),
+      ...(audit.contentPaths.length > 0 ? { content_paths: audit.contentPaths.join(",") } : {}),
+      ...(audit.destinationPaths.length > 0
+        ? { destination_paths: audit.destinationPaths.join(",") }
+        : {}),
+      audience_resolved: audit.currentAudienceResolved,
+      audience_scope: audit.currentAudienceResolved
+        ? audit.currentAudienceThreaded
+          ? "thread"
+          : "conversation"
+        : "unresolved",
+      ...(audit.currentAudienceChannel ? { audience_channel: audit.currentAudienceChannel } : {}),
     },
   });
 }
@@ -1142,24 +1251,31 @@ export async function runBeforeToolCallHook(args: {
   try {
     const activeEnforcementMetadata =
       args.ctx?.resolveActiveEnforcementMetadata?.() ?? args.ctx?.activeEnforcementMetadata;
-    const corePolicyDecision = evaluateToolEnforcementPolicy({
-      toolName,
-      params,
-      classification: args.tool ? getToolClassification(args.tool) : undefined,
-      activeEnforcementMetadata,
-      messageAudience: {
-        turnSourceChannel: args.ctx?.turnSourceChannel,
-        turnSourceTo: args.ctx?.turnSourceTo,
-        turnSourceThreadId: args.ctx?.turnSourceThreadId,
-      },
-    });
-    if (corePolicyDecision.outcome === "deny") {
+    const provenanceEnforcement = resolveProvenanceEnforcementConfig(args.ctx?.config);
+    const evaluatedCorePolicyDecision = provenanceEnforcement.enabled
+      ? evaluateToolEnforcementPolicy({
+          toolName,
+          params,
+          classification: args.tool ? getToolClassification(args.tool) : undefined,
+          activeEnforcementMetadata,
+          messageAudience: {
+            turnSourceChannel: args.ctx?.turnSourceChannel,
+            turnSourceTo: args.ctx?.turnSourceTo,
+            turnSourceThreadId: args.ctx?.turnSourceThreadId,
+          },
+        })
+      : undefined;
+    const corePolicyDecision = evaluatedCorePolicyDecision?.policyId
+      ? evaluatedCorePolicyDecision
+      : undefined;
+    if (corePolicyDecision?.outcome === "deny") {
       return {
         blocked: true,
         kind: "veto",
         deniedReason: "core-policy",
         reason: corePolicyDecision.reason,
         params,
+        corePolicyDecision,
       };
     }
     const hasBeforeToolCallHooks = hookRunner?.hasHooks("before_tool_call") === true;
@@ -1172,7 +1288,7 @@ export async function runBeforeToolCallHook(args: {
       ...(args.ctx?.config ? { config: args.ctx.config } : {}),
     });
     if (!initialCorePolicyResult && !shouldRunTrustedPolicies && !hasBeforeToolCallHooks) {
-      return { blocked: false, params };
+      return { blocked: false, params, ...(corePolicyDecision ? { corePolicyDecision } : {}) };
     }
     const deriveOptions =
       args.ctx?.cwd || args.ctx?.sandbox
@@ -1303,6 +1419,7 @@ export async function runBeforeToolCallHook(args: {
       const allowed: HookOutcome = {
         blocked: false as const,
         params: policyAdjustedParams,
+        ...(corePolicyDecision ? { corePolicyDecision } : {}),
       };
       if (trustedApprovalResolution) {
         allowed.approvalResolution = trustedApprovalResolution;
@@ -1375,6 +1492,7 @@ export async function runBeforeToolCallHook(args: {
     const allowed: HookOutcome = {
       blocked: false as const,
       params: finalParams,
+      ...(corePolicyDecision ? { corePolicyDecision } : {}),
     };
     if (finalApprovalResolution) {
       allowed.approvalResolution = finalApprovalResolution;
@@ -1464,14 +1582,29 @@ export function wrapToolWithBeforeToolCallHook(
             reason: outcome.reason,
             deniedReason: outcome.deniedReason ?? "plugin-before-tool-call",
           });
-          emitToolBlockedSecurityEvent({
-            ctx,
-            deniedReason: outcome.deniedReason ?? "plugin-before-tool-call",
-            toolIdentity: diagnosticIdentity,
-            toolName: normalizedToolName,
-            trace,
-            paramsSummary: eventBase.paramsSummary,
-          });
+          if (
+            outcome.deniedReason === "core-policy" &&
+            outcome.corePolicyDecision?.outcome === "deny"
+          ) {
+            emitCorePolicyDecisionSecurityEvent({
+              ctx,
+              toolIdentity: diagnosticIdentity,
+              toolName: normalizedToolName,
+              toolCallId,
+              trace,
+              paramsSummary: eventBase.paramsSummary,
+              decision: outcome.corePolicyDecision,
+            });
+          } else {
+            emitToolBlockedSecurityEvent({
+              ctx,
+              deniedReason: outcome.deniedReason ?? "plugin-before-tool-call",
+              toolIdentity: diagnosticIdentity,
+              toolName: normalizedToolName,
+              trace,
+              paramsSummary: eventBase.paramsSummary,
+            });
+          }
         }
         const blockedResult = buildBlockedToolResult({
           reason: outcome.reason,
@@ -1516,6 +1649,17 @@ export function wrapToolWithBeforeToolCallHook(
         paramsSummary: summarizeToolParams(executeParams),
       };
       if (hookOptions.emitDiagnostics) {
+        if (outcome.corePolicyDecision?.outcome === "allow") {
+          emitCorePolicyDecisionSecurityEvent({
+            ctx,
+            toolIdentity: diagnosticIdentity,
+            toolName: normalizedToolName,
+            toolCallId,
+            trace,
+            paramsSummary: eventBase.paramsSummary,
+            decision: outcome.corePolicyDecision,
+          });
+        }
         emitTrustedDiagnosticEvent({
           type: "tool.execution.started",
           ...eventBase,

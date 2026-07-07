@@ -9,17 +9,34 @@ const MESSAGE_EXPLICIT_ROUTE_PATHS = new Set(["target", "targets", "channel", "c
 export type ToolEnforcementDecision =
   | {
       outcome: "allow";
+      policyId?: "fides-untrusted-content-message-egress";
+      audit?: ToolEnforcementAudit;
     }
   | {
       outcome: "deny";
       policyId: "fides-untrusted-content-message-egress";
       reason: string;
+      audit: ToolEnforcementAudit;
     }
   | {
       outcome: "deny";
       policyId: "fides-untrusted-content-message-egress-ambiguous";
       reason: string;
+      audit: ToolEnforcementAudit;
     };
+
+export type ToolEnforcementAudit = Readonly<{
+  policyId: "fides-untrusted-content-message-egress";
+  consequential: string[];
+  contentPaths: string[];
+  destinationPaths: string[];
+  provenanceTrust: "unknown" | "trusted" | "untrusted";
+  provenanceSourceKind?: string;
+  provenanceSourceLabel?: string;
+  currentAudienceResolved: boolean;
+  currentAudienceChannel?: string;
+  currentAudienceThreaded: boolean;
+}>;
 
 type MessageAudienceContext = {
   turnSourceChannel?: string;
@@ -222,17 +239,39 @@ export function evaluateToolEnforcementPolicy(args: {
   if (!hasClassifiedArgumentValue(paramsRecord, contentPaths)) {
     return { outcome: "allow" };
   }
+  const normalizedAudience = normalizeMessageAudienceContext(args.messageAudience);
+  const audit: ToolEnforcementAudit = {
+    policyId: "fides-untrusted-content-message-egress",
+    consequential: [...(args.classification?.consequential ?? [])],
+    contentPaths,
+    destinationPaths: explicitRoutePaths,
+    provenanceTrust: metadata.provenance?.trust ?? "unknown",
+    ...(metadata.provenance?.sourceKind
+      ? { provenanceSourceKind: metadata.provenance.sourceKind }
+      : {}),
+    ...(metadata.provenance?.sourceLabel
+      ? { provenanceSourceLabel: metadata.provenance.sourceLabel }
+      : {}),
+    currentAudienceResolved: Boolean(normalizedAudience),
+    ...(normalizedAudience?.channel ? { currentAudienceChannel: normalizedAudience.channel } : {}),
+    currentAudienceThreaded: Boolean(normalizedAudience?.threadId),
+  };
   const baseDecision = resolveMessageAudienceDecision({
     params: paramsRecord,
-    currentAudience: normalizeMessageAudienceContext(args.messageAudience),
+    currentAudience: normalizedAudience,
   });
   if (baseDecision.outcome === "allow") {
-    return baseDecision;
+    return {
+      ...baseDecision,
+      policyId: audit.policyId,
+      audit,
+    };
   }
   const sourceDescription =
     metadata.provenance?.sourceLabel ?? metadata.provenance?.sourceKind ?? "an untrusted source";
   return {
     ...baseDecision,
     reason: `${baseDecision.reason} Active provenance: ${sourceDescription}.`,
+    audit,
   };
 }

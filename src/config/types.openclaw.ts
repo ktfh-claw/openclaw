@@ -77,6 +77,21 @@ export type SecurityConfig = {
       allowSymlinkCommand?: boolean;
     };
   };
+  provenanceEnforcement?: {
+    /**
+     * Master switch for the built-in provenance-aware before-tool-call policy.
+     * Default: true.
+     */
+    enabled?: boolean;
+    /**
+     * Audit emission level for consequential provenance-aware policy decisions.
+     * - off: emit no policy decision security events
+     * - blocked: emit only deny decisions
+     * - all: emit both allow and deny decisions
+     * Default: blocked.
+     */
+    audit?: "off" | "blocked" | "all";
+  };
 };
 
 export type SurfaceConfigEntry = {
