@@ -144,6 +144,7 @@ export type HookContext = {
     toolName?: string;
   };
   activeEnforcementMetadata?: EnforcementMetadata;
+  resolveActiveEnforcementMetadata?: () => EnforcementMetadata | undefined;
   sandbox?: {
     root: string;
     bridge: SandboxFsBridge;
@@ -1139,11 +1140,13 @@ export async function runBeforeToolCallHook(args: {
 
   const hookRunner = getGlobalHookRunner();
   try {
+    const activeEnforcementMetadata =
+      args.ctx?.resolveActiveEnforcementMetadata?.() ?? args.ctx?.activeEnforcementMetadata;
     const corePolicyDecision = evaluateToolEnforcementPolicy({
       toolName,
       params,
       classification: args.tool ? getToolClassification(args.tool) : undefined,
-      activeEnforcementMetadata: args.ctx?.activeEnforcementMetadata,
+      activeEnforcementMetadata,
       messageAudience: {
         turnSourceChannel: args.ctx?.turnSourceChannel,
         turnSourceTo: args.ctx?.turnSourceTo,

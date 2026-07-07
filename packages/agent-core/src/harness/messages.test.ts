@@ -1,6 +1,6 @@
 // Agent Core tests cover messages behavior.
 import { describe, expect, it } from "vitest";
-import { convertToLlm, createCustomMessage } from "./messages.js";
+import { convertToLlm, createCompactionSummaryMessage, createCustomMessage } from "./messages.js";
 
 describe("harness message timestamps", () => {
   it("rejects invalid timestamps before creating context messages", () => {
@@ -16,12 +16,28 @@ describe("harness message timestamps", () => {
         summary: "older context",
         tokensBefore: 123,
         timestamp,
+        details: { enforcementMetadata: { version: 1, provenance: { trust: "untrusted" } } },
       },
     ];
 
     const [message] = convertToLlm(persistedMessages);
 
     expect(message?.timestamp).toBe(Date.parse(timestamp));
+  });
+
+  it("preserves compaction summary details for replay-side metadata consumers", () => {
+    const created = createCompactionSummaryMessage(
+      "older context",
+      123,
+      "2026-05-30T17:00:00.000Z",
+      {
+        enforcementMetadata: { version: 1, provenance: { trust: "untrusted" } },
+      },
+    );
+
+    expect(created.details).toEqual({
+      enforcementMetadata: { version: 1, provenance: { trust: "untrusted" } },
+    });
   });
 
   it("keeps corrupt persisted compaction timestamps non-fatal", () => {

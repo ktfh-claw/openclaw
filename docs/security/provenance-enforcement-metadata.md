@@ -150,6 +150,32 @@ That keeps issue `#3` compatible with current transcript and replay handling whi
 - Boundaries that cannot preserve the full object may keep the coarsest still-correct subset, usually `provenance.trust`.
 - Boundaries that drop the contract entirely should degrade to "metadata unavailable", not synthesize `trusted`.
 
+## Replay and compaction rules
+
+Issue `#6` adds the first replay/history retention rules for this contract.
+
+- Persisted user-turn transcript rows should keep `enforcementMetadata` beside the original content.
+- Replay-time normalization may reshape user content, strip old inbound routing metadata, or collapse text-only arrays, but it should preserve the coarse enforcement meaning of any retained message.
+- Historical replay intended for the model may diverge from the durable transcript: OpenClaw can add a compact model-visible provenance prefix for replayed untrusted content without mutating the stored transcript row.
+- When compaction summarizes older history away, the resulting `compactionSummary` may carry preserved `enforcementMetadata` in `details` even though the model-visible summary text is a synthesized replacement.
+- Context pruning/history limiting may drop old raw messages, but the remaining in-context carriers should still preserve enough coarse truth for later policy to recover whether untrusted influence is still present.
+
+## Minimum retained semantics for policy
+
+The minimum semantics later policy must still be able to recover are:
+
+- whether the active in-context content is still influenced by untrusted input
+- the coarsest still-correct trust value, with `untrusted` remaining sticky
+- a coarse source family when it survives replay (`external_user`, `tool_result`, etc.)
+- an optional descriptive source label when preserved without lying
+
+This means later policy evaluation can treat:
+
+- direct replayed user messages with `enforcementMetadata`
+- replay-safe summary carriers such as `compactionSummary.details.enforcementMetadata`
+
+as equivalent coarse policy inputs, even when the raw historical text has been summarized or normalized for prompt assembly.
+
 ## What this enables next
 
 This contract is the substrate for:

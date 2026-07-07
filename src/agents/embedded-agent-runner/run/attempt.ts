@@ -73,6 +73,10 @@ import {
 import { getPluginToolMeta } from "../../../plugins/tools.js";
 import { isSubagentSessionKey } from "../../../routing/session-key.js";
 import {
+  deriveActiveEnforcementMetadataFromMessages,
+  mergeEnforcementMetadata,
+} from "../../../security/enforcement-metadata.js";
+import {
   annotateInterSessionPromptText,
   projectInputProvenanceToEnforcementMetadata,
 } from "../../../sessions/input-provenance.js";
@@ -1344,9 +1348,13 @@ export async function runEmbeddedAttempt(
             runtimeToolAllowlist: effectiveToolsAllow,
             cronCreatorToolAllowlistRef: cronCreatorToolAllowlist,
             authProfileStore: params.authProfileStore,
-            activeEnforcementMetadata: projectInputProvenanceToEnforcementMetadata(
-              params.inputProvenance,
-            ),
+            resolveActiveEnforcementMetadata: () =>
+              mergeEnforcementMetadata([
+                projectInputProvenanceToEnforcementMetadata(params.inputProvenance),
+                deriveActiveEnforcementMetadataFromMessages(
+                  sessionManager?.buildSessionContext().messages ?? [],
+                ),
+              ]),
             recordToolPrepStage: (name) => corePluginToolStages.mark(name),
             onToolOutcome: params.onToolOutcome,
             allocateToolOutcomeOrdinal: params.allocateToolOutcomeOrdinal,

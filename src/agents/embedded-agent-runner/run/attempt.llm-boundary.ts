@@ -3,6 +3,10 @@
  */
 import { stripInboundMetadata } from "../../../auto-reply/reply/strip-inbound-meta.js";
 import { buildTimestampPrefix } from "../../../gateway/server-methods/agent-timestamp.js";
+import {
+  annotateTextWithEnforcementMetadata,
+  readEnforcementMetadataFromMessage,
+} from "../../../security/enforcement-metadata.js";
 import { INTER_SESSION_PROMPT_PREFIX_BASE } from "../../../sessions/input-provenance.js";
 import { stripHistoricalRuntimeContextCustomMessages } from "../../internal-runtime-context.js";
 import type { AgentMessage } from "../../runtime/index.js";
@@ -50,7 +54,9 @@ export function normalizeMessagesForLlmBoundary(
     normalized,
     options,
   );
-  return stripHistoricalRuntimeContextCustomMessages(withoutHistoricalInboundMetadata);
+  return stripHistoricalRuntimeContextCustomMessages(
+    annotateHistoricalReplayProvenance(withoutHistoricalInboundMetadata),
+  );
 }
 
 /** Normalizes existing transcript messages as if the current prompt were appended last. */
@@ -596,6 +602,75 @@ function stripUnsafeBlockedRunMetadata(messages: AgentMessage[]): AgentMessage[]
       ...(message as unknown as Record<string, unknown>),
       __openclaw: nextOpenClaw,
     } as unknown as AgentMessage;
+  });
+  return changed ? nextMessages : messages;
+}
+
+function annotateHistoricalReplayProvenance(messages: AgentMessage[]): AgentMessage[] {
+  const activeUserMessageIndex = findActiveUserMessageIndex(messages);
+  let changed = false;
+  const nextMessages = messages.map((message, index) => {
+    const metadata = readEnforcementMetadataFromMessage(
+      message as { enforcementMetadata?: unknown; details?: unknown },
+    );
+    if (!metadata) {
+      return message;
+    }
+    if (message.role === "user") {
+      if (index === activeUserMessageIndex) {
+        return message;
+      }
+      const content = (message as { content?: unknown }).content;
+      if (typeof content === "string") {
+        const next = annotateTextWithEnforcementMetadata(content, metadata);
+        if (next === content) {
+          return message;
+        }
+        changed = true;
+        return { ...message, content: next } as AgentMessage;
+      }
+      if (!Array.isArray(content)) {
+        return message;
+      }
+      let updated = false;
+      let contentChanged = false;
+      const nextContent = content.map((block) => {
+        if (
+          updated ||
+          !block ||
+          typeof block !== "object" ||
+          (block as { type?: unknown }).type !== "text" ||
+          typeof (block as { text?: unknown }).text !== "string"
+        ) {
+          return block;
+        }
+        updated = true;
+        const nextText = annotateTextWithEnforcementMetadata(
+          (block as { text: string }).text,
+          metadata,
+        );
+        if (nextText === (block as { text: string }).text) {
+          return block;
+        }
+        contentChanged = true;
+        changed = true;
+        return { ...block, text: nextText };
+      });
+      return contentChanged ? ({ ...message, content: nextContent } as AgentMessage) : message;
+    }
+    if (message.role !== "compactionSummary") {
+      return message;
+    }
+    const summary = (message as { summary?: unknown }).summary;
+    if (typeof summary !== "string") {
+      return message;
+    }
+    const nextSummary = annotateTextWithEnforcementMetadata(summary, metadata);
+    if (nextSummary === summary) {
+      return message;
+    }
+    changed = true;
+    return { ...message, summary: nextSummary } as AgentMessage;
   });
   return changed ? nextMessages : messages;
 }

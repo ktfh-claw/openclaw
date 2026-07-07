@@ -92,12 +92,14 @@ export function createCompactionSummaryMessage(
   summary: string,
   tokensBefore: number,
   timestamp: string,
+  details?: unknown,
 ): CompactionSummaryMessage {
   return {
     role: "compactionSummary",
     summary,
     tokensBefore,
     timestamp: requireSessionTimestampMs(timestamp, "compaction summary timestamp"),
+    ...(details !== undefined ? { details } : {}),
   };
 }
 

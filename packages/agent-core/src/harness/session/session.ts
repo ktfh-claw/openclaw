@@ -72,6 +72,7 @@ export function buildSessionContext(pathEntries: SessionTreeEntry[]): SessionCon
           compaction.summary,
           compaction.tokensBefore,
           compaction.timestamp,
+          compaction.details,
         ),
       ),
     );

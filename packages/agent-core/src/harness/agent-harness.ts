@@ -86,6 +86,127 @@ function createFailureMessage(model: Model, error: unknown, aborted: boolean): A
   };
 }
 
+type MinimalEnforcementMetadata = {
+  version: 1;
+  provenance?: {
+    trust: "unknown" | "trusted" | "untrusted";
+    sourceKind?: string;
+    sourceLabel?: string;
+  };
+};
+
+function normalizeCompactionCarrierEnforcementMetadata(
+  value: unknown,
+): MinimalEnforcementMetadata | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const version = record.version === undefined || record.version === 1 ? 1 : undefined;
+  if (!version) {
+    return undefined;
+  }
+  const provenance =
+    record.provenance && typeof record.provenance === "object" && !Array.isArray(record.provenance)
+      ? (record.provenance as Record<string, unknown>)
+      : undefined;
+  const trust = provenance?.trust;
+  if (trust !== "unknown" && trust !== "trusted" && trust !== "untrusted") {
+    return undefined;
+  }
+  return {
+    version,
+    provenance: {
+      trust,
+      ...(typeof provenance?.sourceKind === "string" ? { sourceKind: provenance.sourceKind } : {}),
+      ...(typeof provenance?.sourceLabel === "string"
+        ? { sourceLabel: provenance.sourceLabel }
+        : {}),
+    },
+  };
+}
+
+function readCompactionMessageEnforcementMetadata(
+  message: AgentMessage | undefined,
+): MinimalEnforcementMetadata | undefined {
+  if (!message || typeof message !== "object") {
+    return undefined;
+  }
+  const direct = normalizeCompactionCarrierEnforcementMetadata(
+    (message as { enforcementMetadata?: unknown }).enforcementMetadata,
+  );
+  if (direct) {
+    return direct;
+  }
+  const details =
+    "details" in message &&
+    (message as { details?: unknown }).details &&
+    typeof (message as { details?: unknown }).details === "object" &&
+    !Array.isArray((message as { details?: unknown }).details)
+      ? ((message as { details?: unknown }).details as Record<string, unknown>)
+      : undefined;
+  return normalizeCompactionCarrierEnforcementMetadata(details?.enforcementMetadata);
+}
+
+function summarizeCompactionEnforcementMetadata(
+  messages: readonly AgentMessage[],
+): MinimalEnforcementMetadata | undefined {
+  let best: MinimalEnforcementMetadata | undefined;
+  const precedence = { trusted: 1, unknown: 2, untrusted: 3 } as const;
+  for (const message of messages) {
+    const metadata = readCompactionMessageEnforcementMetadata(message);
+    if (!metadata?.provenance) {
+      continue;
+    }
+    if (
+      !best ||
+      precedence[metadata.provenance.trust] >
+        precedence[(best.provenance?.trust ?? "trusted") as keyof typeof precedence]
+    ) {
+      best = metadata;
+      continue;
+    }
+    if (
+      best.provenance?.trust === metadata.provenance.trust &&
+      !best.provenance.sourceKind &&
+      metadata.provenance.sourceKind
+    ) {
+      best = {
+        version: 1,
+        provenance: {
+          ...best.provenance,
+          sourceKind: metadata.provenance.sourceKind,
+          ...(best.provenance.sourceLabel
+            ? {}
+            : metadata.provenance.sourceLabel
+              ? { sourceLabel: metadata.provenance.sourceLabel }
+              : {}),
+        },
+      };
+    }
+  }
+  return best;
+}
+
+function mergeCompactionDetailsWithEnforcementMetadata(
+  details: unknown,
+  enforcementMetadata: MinimalEnforcementMetadata | undefined,
+): unknown {
+  if (!enforcementMetadata) {
+    return details;
+  }
+  if (!details) {
+    return { enforcementMetadata };
+  }
+  if (typeof details !== "object" || Array.isArray(details)) {
+    return details;
+  }
+  return {
+    ...(details as Record<string, unknown>),
+    enforcementMetadata,
+  };
+}
+
 function cloneStreamOptions(streamOptions?: AgentHarnessStreamOptions): AgentHarnessStreamOptions {
   return {
     ...streamOptions,
@@ -861,11 +982,19 @@ export class CoreAgentHarness<
         throw compactResult.error;
       }
       const result = compactResult.value;
+      const summarizedEnforcementMetadata = summarizeCompactionEnforcementMetadata([
+        ...preparation.messagesToSummarize,
+        ...preparation.turnPrefixMessages,
+      ]);
+      const mergedDetails = mergeCompactionDetailsWithEnforcementMetadata(
+        result.details,
+        summarizedEnforcementMetadata,
+      );
       const entryId = await this.session.appendCompaction(
         result.summary,
         result.firstKeptEntryId,
         result.tokensBefore,
-        result.details,
+        mergedDetails,
         provided !== undefined,
       );
       const entry = await this.session.getEntry(entryId);
@@ -876,7 +1005,10 @@ export class CoreAgentHarness<
           fromHook: provided !== undefined,
         });
       }
-      return result;
+      return {
+        ...result,
+        ...(mergedDetails !== result.details ? { details: mergedDetails } : {}),
+      };
     } catch (error) {
       throw normalizeHarnessError(error, "compaction");
     } finally {

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  annotateTextWithEnforcementMetadata,
   applyEnforcementMetadataToMessage,
+  deriveActiveEnforcementMetadataFromMessages,
+  mergeEnforcementMetadata,
   normalizeEnforcementMetadata,
+  readEnforcementMetadataFromMessage,
 } from "./enforcement-metadata.js";
 
 describe("normalizeEnforcementMetadata", () => {
@@ -90,5 +94,82 @@ describe("applyEnforcementMetadataToMessage", () => {
       version: 1,
       provenance: { trust: "trusted", sourceKind: "internal_system", sourceLabel: "system" },
     });
+  });
+});
+
+describe("enforcement metadata replay helpers", () => {
+  it("reads metadata from compaction-style details carriers", () => {
+    expect(
+      readEnforcementMetadataFromMessage({
+        details: {
+          enforcementMetadata: {
+            version: 1,
+            provenance: { trust: "untrusted", sourceKind: "external_user", sourceLabel: "discord" },
+          },
+        },
+      }),
+    ).toEqual({
+      version: 1,
+      provenance: { trust: "untrusted", sourceKind: "external_user", sourceLabel: "discord" },
+    });
+  });
+
+  it("keeps untrusted trust sticky when merging replay carriers", () => {
+    expect(
+      mergeEnforcementMetadata([
+        {
+          version: 1,
+          provenance: { trust: "trusted", sourceKind: "internal_system", sourceLabel: "runtime" },
+        },
+        {
+          version: 1,
+          provenance: { trust: "untrusted", sourceKind: "external_user", sourceLabel: "discord" },
+        },
+      ]),
+    ).toEqual({
+      version: 1,
+      provenance: { trust: "untrusted", sourceKind: "external_user", sourceLabel: "discord" },
+    });
+  });
+
+  it("derives active metadata from user turns and compacted summary carriers", () => {
+    expect(
+      deriveActiveEnforcementMetadataFromMessages([
+        {
+          role: "compactionSummary",
+          details: {
+            enforcementMetadata: {
+              version: 1,
+              provenance: {
+                trust: "untrusted",
+                sourceKind: "external_user",
+                sourceLabel: "discord",
+              },
+            },
+          },
+        },
+        {
+          role: "user",
+          enforcementMetadata: {
+            version: 1,
+            provenance: { trust: "trusted", sourceKind: "internal_system", sourceLabel: "runtime" },
+          },
+        },
+      ]),
+    ).toEqual({
+      version: 1,
+      provenance: { trust: "untrusted", sourceKind: "external_user", sourceLabel: "discord" },
+    });
+  });
+
+  it("adds an idempotent model-visible prefix for untrusted replay text", () => {
+    const metadata = {
+      version: 1 as const,
+      provenance: { trust: "untrusted" as const, sourceKind: "external_user" as const },
+    };
+    const once = annotateTextWithEnforcementMetadata("Historical ask", metadata);
+    const twice = annotateTextWithEnforcementMetadata(once, metadata);
+    expect(once).toBe("[Untrusted content provenance] sourceKind=external_user\nHistorical ask");
+    expect(twice).toBe(once);
   });
 });

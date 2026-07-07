@@ -345,6 +345,64 @@ describe("normalizeMessagesForLlmBoundary", () => {
     );
   });
 
+  it("adds untrusted provenance headers to historical replay text", () => {
+    const input = [
+      {
+        role: "user",
+        content: [{ type: "text", text: "Historical ask" }],
+        timestamp: 1,
+        enforcementMetadata: {
+          version: 1,
+          provenance: { trust: "untrusted", sourceKind: "external_user", sourceLabel: "discord" },
+        },
+      },
+      {
+        role: "assistant",
+        content: [{ type: "text", text: "Historical answer" }],
+        timestamp: 2,
+      },
+      {
+        role: "user",
+        content: [{ type: "text", text: "Current ask" }],
+        timestamp: 3,
+      },
+    ];
+
+    const output = normalizeMessagesForLlmBoundary(
+      input as Parameters<typeof normalizeMessagesForLlmBoundary>[0],
+    ) as unknown as Array<{ content?: string }>;
+
+    expect(output[0]?.content).toBe(
+      "[Untrusted content provenance] sourceKind=external_user source=discord\nHistorical ask",
+    );
+    expect(output[2]?.content).toBe("Current ask");
+  });
+
+  it("adds untrusted provenance headers to compacted summary context", () => {
+    const input = [
+      {
+        role: "compactionSummary",
+        summary: "Older compacted context",
+        tokensBefore: 123,
+        timestamp: 1,
+        details: {
+          enforcementMetadata: {
+            version: 1,
+            provenance: { trust: "untrusted", sourceKind: "external_user", sourceLabel: "discord" },
+          },
+        },
+      },
+    ];
+
+    const output = normalizeMessagesForLlmBoundary(
+      input as Parameters<typeof normalizeMessagesForLlmBoundary>[0],
+    ) as unknown as Array<{ summary?: string }>;
+
+    expect(output[0]?.summary).toBe(
+      "[Untrusted content provenance] sourceKind=external_user source=discord\nOlder compacted context",
+    );
+  });
+
   it("preserves inbound metadata on the current user turn", () => {
     const historicalEnvelope =
       'Conversation info (untrusted metadata):\n```json\n{"channel":"discord"}\n```\n\nOld ask';

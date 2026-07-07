@@ -2150,6 +2150,47 @@ describe("before_tool_call requireApproval handling", () => {
     expect(details.status).toBe("blocked");
     expect(details.deniedReason).toBe("core-policy");
   });
+
+  it("prefers replay-derived enforcement metadata from the hook context resolver", async () => {
+    hookRunner.hasHooks.mockReturnValue(true);
+    hookRunner.runBeforeToolCall.mockResolvedValue(undefined);
+
+    const messageTool = {
+      name: "message",
+      description: "message",
+      parameters: { type: "object", properties: {} },
+      execute: vi.fn(),
+    } as unknown as AnyAgentTool;
+    setToolClassification(messageTool, {
+      version: 1,
+      consequential: ["network_egress"],
+      egressArguments: [
+        { path: "message", kind: "content" },
+        { path: "target", kind: "destination" },
+      ],
+    });
+
+    const result = await runBeforeToolCallHook({
+      toolName: "message",
+      tool: messageTool,
+      params: { action: "send", target: "user:42", message: "forward this" },
+      ctx: {
+        agentId: "main",
+        sessionKey: "main",
+        resolveActiveEnforcementMetadata: () => ({
+          version: 1,
+          provenance: { trust: "untrusted", sourceKind: "external_user", sourceLabel: "discord" },
+        }),
+      },
+    });
+
+    expect(result).toMatchObject({
+      blocked: true,
+      kind: "veto",
+      deniedReason: "core-policy",
+    });
+    expect(hookRunner.runBeforeToolCall).not.toHaveBeenCalled();
+  });
 });
 
 describe("before_tool_call tool content private-data capture", () => {

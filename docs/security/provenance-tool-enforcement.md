@@ -7,10 +7,28 @@ The first deterministic provenance-aware enforcement seam lives in:
 At this seam OpenClaw now evaluates, before tool execution:
 
 - tool classification metadata from issue `#4`
-- current-turn enforcement metadata projected from input provenance
+- active enforcement metadata resolved from the live in-context transcript
 - whether the pending tool call is a consequential outbound action
 - the resolved current audience for the active turn (`turnSourceChannel`, `turnSourceTo`, optional thread id)
 - whether the call carries outbound content and whether its routing stays within that audience
+
+## Replay-derived policy input
+
+Issue `#6` extends the enforcement input from "fresh inbound turn only" to
+"whatever provenance-aware content still survives in the active replay context".
+
+Current resolution order is:
+
+1. project current-turn `InputProvenance` into coarse `enforcementMetadata`
+2. scan the live replay context for preserved carriers
+   - user messages that still carry `enforcementMetadata`
+   - compaction summaries whose `details.enforcementMetadata` preserves summarized-away trust state
+3. merge those carriers conservatively, with `untrusted` sticky
+
+This means a later tool call can still be blocked after compaction or replay if
+the surviving context shows that the model is still operating under untrusted
+influence, even when the original raw inbound message is no longer present as a
+full transcript row.
 
 ## Current enforced rule
 
