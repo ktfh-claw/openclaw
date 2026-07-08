@@ -572,6 +572,57 @@ describe("OpenResponses HTTP API (e2e)", () => {
       await ensureResponseConsumed(resFunctionOutput);
 
       mockAgentOnce([{ text: "ok" }]);
+      const resEnforcementMetadata = await postResponses(port, {
+        model: "openclaw",
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: "forward this",
+            enforcement_metadata: {
+              provenance: {
+                trust: "untrusted",
+                sourceKind: "external_user",
+                sourceLabel: "discord",
+              },
+            },
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_2",
+            output: "tool output",
+            enforcement_metadata: {
+              provenance: {
+                trust: "trusted",
+                sourceKind: "internal_system",
+                sourceLabel: "tool-runner",
+              },
+            },
+          },
+        ],
+      });
+      expect(resEnforcementMetadata.status).toBe(200);
+      expect(
+        (
+          firstAgentOpts() as
+            | {
+                enforcementMetadata?: {
+                  provenance?: { trust?: string; sourceKind?: string; sourceLabel?: string };
+                };
+              }
+            | undefined
+        )?.enforcementMetadata,
+      ).toEqual({
+        version: 1,
+        provenance: {
+          trust: "untrusted",
+          sourceKind: "external_user",
+          sourceLabel: "discord",
+        },
+      });
+      await ensureResponseConsumed(resEnforcementMetadata);
+
+      mockAgentOnce([{ text: "ok" }]);
       const resInputFile = await postResponses(port, {
         model: "openclaw",
         input: [

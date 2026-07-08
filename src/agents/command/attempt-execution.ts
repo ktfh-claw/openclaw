@@ -97,9 +97,7 @@ const ACP_TRANSCRIPT_USAGE = {
 const GOOGLE_GEMINI_CLI_PROVIDER_ID = "google-gemini-cli";
 const GOOGLE_PROVIDER_ID = "google";
 
-function shouldSuppressEmbeddedLiveStreamOutput(params: {
-  opts: AgentCommandOpts;
-}): boolean {
+function shouldSuppressEmbeddedLiveStreamOutput(params: { opts: AgentCommandOpts }): boolean {
   return params.opts.sessionEffects === "internal" && params.opts.deliver !== true;
 }
 
@@ -684,6 +682,7 @@ export function runAgentAttempt(params: {
         lane: params.opts.lane,
         extraSystemPrompt: params.opts.extraSystemPrompt,
         inputProvenance: params.opts.inputProvenance,
+        enforcementMetadata: params.opts.enforcementMetadata,
         sourceReplyDeliveryMode: params.opts.sourceReplyDeliveryMode,
         requireExplicitMessageTarget: isSubagentSessionKey(params.sessionKey),
         cliSessionId: nextCliSessionId,
@@ -820,6 +819,7 @@ export function runAgentAttempt(params: {
     toolsAllow: params.opts.toolsAllow,
     internalEvents: params.opts.internalEvents,
     inputProvenance: params.opts.inputProvenance,
+    enforcementMetadata: params.opts.enforcementMetadata,
     sourceReplyDeliveryMode: params.opts.sourceReplyDeliveryMode,
     disableMessageTool: params.opts.disableMessageTool,
     streamParams: params.opts.streamParams,

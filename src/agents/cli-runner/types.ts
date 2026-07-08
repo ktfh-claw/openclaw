@@ -15,6 +15,7 @@ import type { ImageContent } from "../../llm/types.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import type { CliBackendExecutionMode } from "../../plugins/cli-backend.types.js";
 import type { PluginHookChannelContext } from "../../plugins/hook-types.js";
+import type { EnforcementMetadata } from "../../security/enforcement-metadata.js";
 import type { InputProvenance } from "../../sessions/input-provenance.js";
 import type {
   PersistedUserTurnMessage,
@@ -62,6 +63,7 @@ export type RunCliAgentParams = {
   currentInboundEventKind?: InboundEventKind;
   currentInboundContext?: CurrentInboundPromptContext;
   inputProvenance?: InputProvenance;
+  enforcementMetadata?: EnforcementMetadata;
   provider: string;
   model?: string;
   thinkLevel?: ThinkLevel;

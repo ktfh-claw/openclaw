@@ -417,6 +417,7 @@ async function runResponsesAgentCommand(params: {
   images: ImageContent[];
   clientTools: ClientToolDefinition[];
   extraSystemPrompt: string;
+  enforcementMetadata?: import("../security/enforcement-metadata.js").EnforcementMetadata;
   modelOverride?: string;
   streamParams: { maxTokens?: number; temperature?: number; topP?: number } | undefined;
   sessionKey: string;
@@ -440,6 +441,7 @@ async function runResponsesAgentCommand(params: {
       bestEffortDeliver: false,
       allowModelOverride: params.modelOverride !== undefined,
       abortSignal: params.abortSignal,
+      enforcementMetadata: params.enforcementMetadata,
     },
     defaultRuntime,
     params.deps,
@@ -748,6 +750,7 @@ export async function handleOpenResponsesHttpRequest(
         images,
         clientTools: resolvedClientTools,
         extraSystemPrompt,
+        enforcementMetadata: prompt.enforcementMetadata,
         modelOverride,
         streamParams,
         sessionKey,
@@ -1117,6 +1120,7 @@ export async function handleOpenResponsesHttpRequest(
         images,
         clientTools: resolvedClientTools,
         extraSystemPrompt,
+        enforcementMetadata: prompt.enforcementMetadata,
         modelOverride,
         streamParams,
         sessionKey,

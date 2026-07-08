@@ -6,6 +6,10 @@
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import {
+  applyEnforcementMetadataToMessage,
+  type EnforcementMetadata,
+} from "../security/enforcement-metadata.js";
+import {
   applyInputProvenanceToUserMessage,
   type InputProvenance,
 } from "../sessions/input-provenance.js";
@@ -38,6 +42,7 @@ export function guardSessionManager(
     config?: OpenClawConfig;
     contextWindowTokens?: number;
     inputProvenance?: InputProvenance;
+    inputEnforcementMetadata?: EnforcementMetadata;
     allowSyntheticToolResults?: boolean;
     missingToolResultText?: string;
     allowedToolNames?: Iterable<string>;
@@ -116,12 +121,16 @@ export function guardSessionManager(
     agentId: opts?.agentId,
     transformMessageForPersistence: (message) => {
       const withProvenance = applyInputProvenanceToUserMessage(message, opts?.inputProvenance);
+      const withEnforcementMetadata = applyEnforcementMetadataToMessage(
+        withProvenance,
+        opts?.inputEnforcementMetadata,
+      );
       const prepared = pendingPreparedUserTurnMessage;
       const merged = mergePreparedUserTurnMessageForRuntime({
-        runtimeMessage: withProvenance,
+        runtimeMessage: withEnforcementMetadata,
         ...(prepared ? { preparedMessage: prepared } : {}),
       });
-      if (merged !== withProvenance) {
+      if (merged !== withEnforcementMetadata) {
         pendingPreparedUserTurnMessage = undefined;
       }
       return merged;

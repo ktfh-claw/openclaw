@@ -1,3 +1,8 @@
+import {
+  mergeEnforcementMetadata,
+  normalizeEnforcementMetadata,
+  type EnforcementMetadata,
+} from "../security/enforcement-metadata.js";
 // Prompt adapter from OpenAI Responses input items to OpenClaw agent messages.
 import {
   buildAgentMessageFromConversationEntries,
@@ -59,6 +64,7 @@ function findActiveUserMessageIndex(input: ItemParam[]): number {
 export function buildAgentPrompt(input: string | ItemParam[]): {
   message: string;
   extraSystemPrompt?: string;
+  enforcementMetadata?: EnforcementMetadata;
 } {
   if (typeof input === "string") {
     return { message: input };
@@ -66,10 +72,12 @@ export function buildAgentPrompt(input: string | ItemParam[]): {
 
   const systemParts: string[] = [];
   const conversationEntries: ConversationEntry[] = [];
+  const enforcementMetadata: Array<EnforcementMetadata | undefined> = [];
   const activeUserMessageIndex = findActiveUserMessageIndex(input);
 
   for (const [i, item] of input.entries()) {
     if (item.type === "message") {
+      enforcementMetadata.push(normalizeEnforcementMetadata(item.enforcement_metadata));
       const content = extractTextContent(item.content).trim();
       // Substitute a placeholder for an image-only or file-only active user turn
       // so the turn is not dropped and the downstream agent command (which requires
@@ -98,6 +106,7 @@ export function buildAgentPrompt(input: string | ItemParam[]): {
         entry: { sender, body },
       });
     } else if (item.type === "function_call_output") {
+      enforcementMetadata.push(normalizeEnforcementMetadata(item.enforcement_metadata));
       conversationEntries.push({
         role: "tool",
         entry: { sender: `Tool:${item.call_id}`, body: item.output },
@@ -111,5 +120,6 @@ export function buildAgentPrompt(input: string | ItemParam[]): {
   return {
     message,
     extraSystemPrompt: systemParts.length > 0 ? systemParts.join("\n\n") : undefined,
+    enforcementMetadata: mergeEnforcementMetadata(enforcementMetadata),
   };
 }

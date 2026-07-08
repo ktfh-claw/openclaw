@@ -1351,6 +1351,7 @@ export async function runEmbeddedAttempt(
             resolveActiveEnforcementMetadata: () =>
               mergeEnforcementMetadata([
                 projectInputProvenanceToEnforcementMetadata(params.inputProvenance),
+                params.enforcementMetadata,
                 deriveActiveEnforcementMetadataFromMessages(
                   sessionManager?.buildSessionContext().messages ?? [],
                 ),
@@ -2201,6 +2202,7 @@ export async function runEmbeddedAttempt(
         config: params.config,
         contextWindowTokens: params.contextTokenBudget,
         inputProvenance: params.inputProvenance,
+        inputEnforcementMetadata: params.enforcementMetadata,
         preparedUserTurnMessage,
         allowSyntheticToolResults: transcriptPolicy.allowSyntheticToolResults,
         missingToolResultText:

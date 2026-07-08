@@ -56,6 +56,7 @@ type McpToolResultPayload = {
     tools?: Array<{ name: string; inputSchema?: Record<string, unknown> }>;
     content?: Array<{ text?: string }>;
     isError?: boolean;
+    _meta?: Record<string, unknown>;
   };
 };
 
@@ -781,6 +782,45 @@ describe("mcp loopback server", () => {
     expect(firstYield).toHaveBeenCalledWith("first yield");
     expect(secondYield).toHaveBeenCalledWith("second yield");
     expect(resolveGatewayScopedToolsMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("emits normalized enforcement metadata in MCP result _meta for cooperative clients", async () => {
+    mockScopedTools([
+      makeMessageTool({
+        execute: async () => ({
+          content: [{ type: "text", text: "ok" }],
+          details: {
+            enforcementMetadata: {
+              provenance: {
+                trust: "untrusted",
+                sourceKind: "tool_result",
+                sourceLabel: "web_fetch",
+              },
+            },
+          },
+        }),
+      }),
+    ]);
+    const { runtime } = await startLoopbackServerForTest();
+
+    const response = await sendLoopbackToolCall({
+      token: runtime.ownerToken,
+      name: "message",
+      args: { action: "send", target: "chat123", message: "send this" },
+    });
+
+    expect(response.status).toBe(200);
+    const payload = await readMcpPayload(response);
+    expect(payload.result?._meta).toEqual({
+      "openclaw/enforcementMetadata": {
+        version: 1,
+        provenance: {
+          trust: "untrusted",
+          sourceKind: "tool_result",
+          sourceLabel: "web_fetch",
+        },
+      },
+    });
   });
 
   it("keeps loopback tool cache entries separate by inbound event, delivery, audio, and target policy", async () => {

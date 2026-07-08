@@ -3,6 +3,7 @@
 import crypto from "node:crypto";
 import { runBeforeToolCallHook, type HookContext } from "../agents/agent-tools.before-tool-call.js";
 import { formatErrorMessage } from "../infra/errors.js";
+import { readEnforcementMetadataFromMessage } from "../security/enforcement-metadata.js";
 import {
   MCP_LOOPBACK_SERVER_NAME,
   MCP_LOOPBACK_SERVER_VERSION,
@@ -22,6 +23,8 @@ type McpTextContent = {
   text: string;
 };
 
+const OPENCLAW_MCP_ENFORCEMENT_METADATA_META_KEY = "openclaw/enforcementMetadata";
+
 // Tool implementations may return MCP content blocks, plain strings, or
 // arbitrary JSON. Normalize them into text blocks for consistent loopback output.
 function normalizeToolCallContent(result: unknown): McpTextContent[] {
@@ -38,6 +41,18 @@ function normalizeToolCallContent(result: unknown): McpTextContent[] {
       text: typeof result === "string" ? result : JSON.stringify(result),
     },
   ];
+}
+
+function resolveToolCallResultMeta(result: unknown): Record<string, unknown> | undefined {
+  const enforcementMetadata = readEnforcementMetadataFromMessage(
+    result as { enforcementMetadata?: unknown; details?: unknown } | undefined,
+  );
+  if (!enforcementMetadata) {
+    return undefined;
+  }
+  return {
+    [OPENCLAW_MCP_ENFORCEMENT_METADATA_META_KEY]: enforcementMetadata,
+  };
 }
 
 /** Handles one MCP loopback JSON-RPC message and returns a response or notification null. */
@@ -141,7 +156,9 @@ export async function handleMcpJsonRpc(params: {
         }
         const result = await tool.execute(toolCallId, hookResult.params, params.signal);
         reportToolCallResult(result, false);
+        const resultMeta = resolveToolCallResultMeta(result);
         return jsonRpcResult(id, {
+          ...(resultMeta ? { _meta: resultMeta } : {}),
           content: normalizeToolCallContent(result),
           isError: false,
         });

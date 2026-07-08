@@ -150,6 +150,31 @@ That keeps issue `#3` compatible with current transcript and replay handling whi
 - Boundaries that cannot preserve the full object may keep the coarsest still-correct subset, usually `provenance.trust`.
 - Boundaries that drop the contract entirely should degrade to "metadata unavailable", not synthesize `trusted`.
 
+## OpenClaw-owned transport carriers
+
+Issue `#9` keeps transport propagation deliberately narrow. OpenClaw currently
+preserves this contract across these first-party boundary carriers:
+
+- OpenResponses request items may include `enforcement_metadata` on `message`
+  and `function_call_output` items. The Gateway normalizes and merges those
+  carriers conservatively into the active ingress turn before local policy runs.
+- OpenClaw's MCP loopback server may emit the normalized contract in
+  `CallToolResult._meta["openclaw/enforcementMetadata"]` when the underlying
+  gateway tool result already carried valid `enforcementMetadata`.
+
+This distinction matters:
+
+- first-party OpenClaw boundaries should preserve metadata faithfully when they
+  already own a validated carrier
+- cooperative external clients may preserve and replay the same object
+- arbitrary third-party components are **not** trusted merely because they send
+  a similar-looking field
+
+For that reason, OpenClaw treats missing transport metadata as "unavailable"
+rather than inventing a trusted default, and it keeps third-party self-asserted
+labels outside the current trust claim unless a specific boundary explicitly
+opts into that trust.
+
 ## Replay and compaction rules
 
 Issue `#6` adds the first replay/history retention rules for this contract.

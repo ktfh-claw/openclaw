@@ -9,6 +9,7 @@ import type { SourceReplyDeliveryMode } from "../../auto-reply/get-reply-options
 import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.public.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import type { PluginHookChannelContext } from "../../plugins/hook-types.js";
+import type { EnforcementMetadata } from "../../security/enforcement-metadata.js";
 import type { InputProvenance } from "../../sessions/input-provenance.js";
 import type { ExecElevatedDefaults } from "../bash-tools.exec-types.js";
 import type { AgentStreamParams, ClientToolDefinition } from "./shared-types.js";
@@ -141,6 +142,8 @@ export type AgentCommandOpts = {
   fastMode?: FastMode;
   /** Resolved per-run auto cutoff seconds for fast mode. */
   fastModeAutoOnSeconds?: number;
+  /** Explicit enforcement metadata for the current ingress turn. */
+  enforcementMetadata?: EnforcementMetadata;
   /** Explicit workspace directory override (for subagents to inherit parent workspace). */
   workspaceDir?: SpawnedRunMetadata["workspaceDir"];
   /** Explicit task working directory for this run. Bootstrap still uses workspaceDir. */

@@ -93,12 +93,42 @@ export const MessageItemRoleSchema = z.enum(["system", "developer", "user", "ass
 export const AssistantPhaseSchema = z.enum(["commentary", "final_answer"]);
 export type AssistantPhase = z.infer<typeof AssistantPhaseSchema>;
 
+const EnforcementMetadataTrustSchema = z.enum(["unknown", "trusted", "untrusted"]);
+const EnforcementMetadataSourceKindSchema = z.enum([
+  "external_user",
+  "external_hook",
+  "inter_session",
+  "tool_result",
+  "internal_system",
+  "unknown",
+]);
+const EnforcementMetadataAudienceScopeSchema = z.enum(["current_session", "named"]);
+export const EnforcementMetadataSchema = z
+  .object({
+    version: z.literal(1).optional(),
+    provenance: z
+      .object({
+        trust: EnforcementMetadataTrustSchema,
+        sourceKind: EnforcementMetadataSourceKindSchema.optional(),
+        sourceLabel: z.string().optional(),
+      })
+      .optional(),
+    audience: z
+      .object({
+        scope: EnforcementMetadataAudienceScopeSchema,
+        label: z.string().optional(),
+      })
+      .optional(),
+  })
+  .strict();
+
 export const MessageItemSchema = z
   .object({
     type: z.literal("message"),
     role: MessageItemRoleSchema,
     content: z.union([z.string(), z.array(ContentPartSchema)]),
     phase: AssistantPhaseSchema.optional(),
+    enforcement_metadata: EnforcementMetadataSchema.optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -126,6 +156,7 @@ export const FunctionCallOutputItemSchema = z
     type: z.literal("function_call_output"),
     call_id: z.string(),
     output: z.string(),
+    enforcement_metadata: EnforcementMetadataSchema.optional(),
   })
   .strict();
 
